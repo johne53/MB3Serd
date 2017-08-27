@@ -3,13 +3,13 @@
 
 require "../local-paths.lib";
 
-$package_string = "\"serd 0.26\"";
-$version_string = "\"0.26.1\"";
-$serd_version = "0.26.1";
+$package_string = "\"serd 0.28\"";
+$version_string = "\"0.28.1\"";
+$serd_version = "0.28.1";
 $major = 0;
-$minor = 26;
+$minor = 28;
 $micro = 1;
-$binary_age = 2601;
+$binary_age = 2801;
 $interface_age = 0;
 $current_minus_age = 0;
 $gettext_package = "serd";
