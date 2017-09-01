@@ -166,7 +166,7 @@ eat_string(SerdReader* reader, const char* str, unsigned n)
 {
 	bool bad = false;
 	for (unsigned i = 0; i < n; ++i) {
-		bad |= eat_byte_check(reader, ((const uint8_t*)str)[i]);
+		bad |= (bool)eat_byte_check(reader, ((const uint8_t*)str)[i]);
 	}
 	return bad;
 }
@@ -649,8 +649,9 @@ read_PN_CHARS_BASE(SerdReader* reader, Ref dest)
 	                                eat_byte_safe(reader, c)))) {
 		return st;
 	} else if (reader->strict && !is_PN_CHARS_BASE(code)) {
-		return r_err(reader, SERD_ERR_BAD_SYNTAX,
-		             "invalid character U+%04X in name\n", code);
+		r_err(reader, SERD_ERR_BAD_SYNTAX,
+		      "invalid character U+%04X in name\n", code);
+		return SERD_ERR_BAD_SYNTAX;
 	}
 	return st;
 }
@@ -1599,7 +1600,7 @@ read_statement(SerdReader* reader)
 	ReadContext        ctx     = { 0, 0, 0, 0, 0, 0, &flags };
 	Ref                subj    = 0;
 	bool               ate_dot = false;
-	char               s_type  = false;
+	char               s_type  = 0;
 	bool               ret     = true;
 	read_ws_star(reader);
 	switch (peek_byte(reader)) {
@@ -1641,7 +1642,9 @@ read_statement(SerdReader* reader)
 		} else if (!subj) {
 			ret = r_err(reader, SERD_ERR_BAD_SYNTAX, "bad subject\n");
 		} else if (!read_triples(reader, ctx, &ate_dot)) {
-			ret = (s_type == '[');
+			if (!(ret = (s_type == '['))) {
+				r_err(reader, SERD_ERR_BAD_SYNTAX, "expected predicate\n");
+			}
 		} else if (!ate_dot) {
 			read_ws_star(reader);
 			ret = (eat_byte_check(reader, '.') == '.');
