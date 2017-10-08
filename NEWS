@@ -1,10 +1,16 @@
-serd (0.29.2) unstable;
+serd (0.29.3) unstable;
 
+  * Make serdi guess input syntax from extension if unspecified
+  * Make serdi syntax options case-insensitive
+  * Add basic error tolerant parsing for line-based formats
   * Support strict parsing of prefixed names
-  * Report errors for prematurely terminated statements
+  * Report errors for all failing test cases
+  * Use more efficient stack allocation and growth policies
+  * Add NTriples test suite
   * Fix building with MSVC
+  * Clean up testing code
 
- -- David Robillard <d@drobilla.net>  Mon, 28 Aug 2017 12:39:47 +0200
+ -- David Robillard <d@drobilla.net>  Sun, 24 Sep 2017 18:51:27 +0200
 
 serd (0.28.0) stable;
 

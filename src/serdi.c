@@ -24,6 +24,46 @@
 #define SERDI_ERROR(msg)       fprintf(stderr, "serdi: " msg);
 #define SERDI_ERRORF(fmt, ...) fprintf(stderr, "serdi: " fmt, __VA_ARGS__);
 
+typedef struct {
+	SerdSyntax  syntax;
+	const char* name;
+	const char* extension;
+} Syntax;
+
+static const Syntax syntaxes[] = {
+	{SERD_TURTLE,   "turtle",   ".ttl"},
+	{SERD_NTRIPLES, "ntriples", ".nt"},
+	{SERD_NQUADS,   "nquads",   ".nq"},
+	{SERD_TRIG,     "trig",     ".trig"},
+	{(SerdSyntax)0, NULL, NULL}
+};
+
+static SerdSyntax
+get_syntax(const char* name)
+{
+	for (const Syntax* s = syntaxes; s->name; ++s) {
+		if (!serd_strncasecmp(s->name, name, strlen(name))) {
+			return s->syntax;
+		}
+	}
+	SERDI_ERRORF("unknown syntax `%s'\n", name);
+	return (SerdSyntax)0;
+}
+
+static SerdSyntax
+guess_syntax(const char* filename)
+{
+	const char* ext = strrchr(filename, '.');
+	if (ext) {
+		for (const Syntax* s = syntaxes; s->name; ++s) {
+			if (!serd_strncasecmp(s->extension, ext, strlen(ext))) {
+				return s->syntax;
+			}
+		}
+	}
+	return (SerdSyntax)0;
+}
+
 static int
 print_version(void)
 {
@@ -59,24 +99,6 @@ print_usage(const char* name, bool error)
 	return error ? 1 : 0;
 }
 
-static bool
-set_syntax(SerdSyntax* syntax, const char* name)
-{
-	if (!strcmp(name, "turtle")) {
-		*syntax = SERD_TURTLE;
-	} else if (!strcmp(name, "ntriples")) {
-		*syntax = SERD_NTRIPLES;
-	} else if (!strcmp(name, "nquads")) {
-		*syntax = SERD_NQUADS;
-	} else if (!strcmp(name, "trig")) {
-		*syntax = SERD_TRIG;
-	} else {
-		SERDI_ERRORF("unknown syntax `%s'\n", name);
-		return false;
-	}
-	return true;
-}
-
 static int
 missing_arg(const char* name, char opt)
 {
@@ -98,8 +120,8 @@ main(int argc, char** argv)
 	}
 
 	FILE*          in_fd         = NULL;
-	SerdSyntax     input_syntax  = SERD_TURTLE;
-	SerdSyntax     output_syntax = SERD_NTRIPLES;
+	SerdSyntax     input_syntax  = (SerdSyntax)0;
+	SerdSyntax     output_syntax = (SerdSyntax)0;
 	bool           from_file     = true;
 	bool           bulk_read     = true;
 	bool           bulk_write    = false;
@@ -138,13 +160,13 @@ main(int argc, char** argv)
 		} else if (argv[a][1] == 'i') {
 			if (++a == argc) {
 				return missing_arg(argv[0], 'i');
-			} else if (!set_syntax(&input_syntax, argv[a])) {
+			} else if (!(input_syntax = get_syntax(argv[a]))) {
 				return print_usage(argv[0], true);
 			}
 		} else if (argv[a][1] == 'o') {
 			if (++a == argc) {
 				return missing_arg(argv[0], 'o');
-			} else if (!set_syntax(&output_syntax, argv[a])) {
+			} else if (!(output_syntax = get_syntax(argv[a]))) {
 				return print_usage(argv[0], true);
 			}
 		} else if (argv[a][1] == 'p') {
@@ -182,6 +204,17 @@ main(int argc, char** argv)
 				return 1;
 			}
 		}
+	}
+
+	if (!input_syntax && !(input_syntax = guess_syntax((const char*)in_name))) {
+		input_syntax = SERD_TRIG;
+	}
+
+	if (!output_syntax) {
+		output_syntax = (
+			(input_syntax == SERD_TURTLE || input_syntax == SERD_NTRIPLES)
+			? SERD_NTRIPLES
+			: SERD_NQUADS);
 	}
 
 	SerdURI  base_uri = SERD_URI_NULL;

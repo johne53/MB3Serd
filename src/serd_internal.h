@@ -20,6 +20,7 @@
 #define _POSIX_C_SOURCE 200809L /* for posix_memalign and posix_fadvise */
 
 #include <assert.h>
+#include <ctype.h>
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -156,7 +157,7 @@ serd_stack_push(SerdStack* stack, size_t n_bytes)
 {
 	const size_t new_size = stack->size + n_bytes;
 	if (stack->buf_size < new_size) {
-		stack->buf_size *= 2;
+		stack->buf_size += (stack->buf_size >> 1); // *= 1.5
 		stack->buf = (uint8_t*)realloc(stack->buf, stack->buf_size);
 	}
 	uint8_t* const ret = (stack->buf + stack->size);
@@ -334,6 +335,17 @@ serd_substrlen(const uint8_t* str,
                const size_t   len,
                size_t*        n_bytes,
                SerdNodeFlags* flags);
+
+static inline int
+serd_strncasecmp(const char* s1, const char* s2, size_t n)
+{
+	for (; n > 0 && *s2; s1++, s2++, --n) {
+		if (toupper(*s1) != toupper(*s2)) {
+			return ((*(uint8_t*)s1 < *(uint8_t*)s2) ? -1 : +1);
+		}
+	}
+	return 0;
+}
 
 static inline uint32_t
 utf8_num_bytes(const uint8_t c)
