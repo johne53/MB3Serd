@@ -4,12 +4,12 @@
 require "../local-paths.lib";
 
 $package_string = "\"serd 0.29\"";
-$version_string = "\"0.29.2\"";
-$serd_version = "0.29.2";
+$version_string = "\"0.29.3\"";
+$serd_version = "0.29.3";
 $major = 0;
 $minor = 29;
-$micro = 2;
-$binary_age = 2902;
+$micro = 3;
+$binary_age = 2903;
 $interface_age = 0;
 $current_minus_age = 0;
 $gettext_package = "serd";
