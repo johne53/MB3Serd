@@ -1680,7 +1680,7 @@ read_turtleTrigDoc(SerdReader* reader)
 				return 0;
 			}
 			skip_until(reader, '\n');
-			reader->status = SERD_ERR_BAD_SYNTAX;
+			reader->status = SERD_SUCCESS;
 		}
 	}
 	return reader->status <= SERD_FAILURE;
@@ -1772,6 +1772,7 @@ serd_reader_new(SerdSyntax        syntax,
 	me->syntax           = syntax;
 	me->cur              = cur;
 	me->next_id          = 1;
+	me->strict           = true;
 
 	me->rdf_first = push_node(me, SERD_URI, NS_RDF "first", 48);
 	me->rdf_rest  = push_node(me, SERD_URI, NS_RDF "rest", 47);
