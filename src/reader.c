@@ -25,9 +25,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define NS_XSD "http://www.w3.org/2001/XMLSchema#"
-#define NS_RDF "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
-
 #define TRY_THROW(exp) if (!(exp)) goto except;
 #define TRY_RET(exp)   if (!(exp)) return 0;
 
@@ -37,14 +34,6 @@
 #else
 #    define SERD_STACK_ASSERT_TOP(reader, ref)
 #endif
-
-typedef struct {
-	const uint8_t* filename;
-	unsigned       line;
-	unsigned       col;
-} Cursor;
-
-typedef uint32_t uchar;
 
 /* Reference to a node in the stack (we can not use pointers since the
    stack may be reallocated, invalidating any pointers to elements).
@@ -78,13 +67,11 @@ struct SerdReaderImpl {
 	SerdStack         stack;
 	SerdSyntax        syntax;
 	unsigned          next_id;
-	Cursor            cur;
 	SerdStatus        status;
 	uint8_t*          buf;
 	uint8_t*          bprefix;
 	size_t            bprefix_len;
 	bool              strict;     ///< True iff strict parsing
-	bool              eof;
 	bool              seen_genid;
 #ifdef SERD_STACK_CHECK
 	Ref*              allocs;     ///< Stack of push offsets
@@ -103,9 +90,8 @@ r_err(SerdReader* reader, SerdStatus st, const char* fmt, ...)
 {
 	va_list args;
 	va_start(args, fmt);
-	const SerdError e = {
-		st, reader->cur.filename, reader->cur.line, reader->cur.col, fmt, &args
-	};
+	const Cursor* const cur = &reader->source.cur;
+	const SerdError e = { st, cur->filename, cur->line, cur->col, fmt, &args };
 	serd_error(reader->error_sink, reader->error_handle, &e);
 	va_end(args);
 	return 0;
@@ -134,12 +120,6 @@ static inline uint8_t
 eat_byte_safe(SerdReader* reader, const uint8_t byte)
 {
 	assert(peek_byte(reader) == byte);
-	switch (byte) {
-	case '\0': reader->eof = (byte != '\0'); break;
-	case '\n': ++reader->cur.line; reader->cur.col = 0; break;
-	default:   ++reader->cur.col;
-	}
-
 	const SerdStatus st = serd_byte_source_advance(&reader->source);
 	if (st) {
 		reader->status = st;
@@ -1609,7 +1589,7 @@ read_statement(SerdReader* reader)
 	read_ws_star(reader);
 	switch (peek_byte(reader)) {
 	case '\0':
-		reader->eof = true;
+		reader->source.eof = true;
 		return reader->status <= SERD_FAILURE;
 	case '@':
 		if (!fancy_syntax(reader)) {
@@ -1674,7 +1654,7 @@ skip_until(SerdReader* reader, uint8_t byte)
 static bool
 read_turtleTrigDoc(SerdReader* reader)
 {
-	while (!reader->eof) {
+	while (!reader->source.eof) {
 		if (!read_statement(reader)) {
 			if (reader->strict) {
 				return 0;
@@ -1689,14 +1669,14 @@ read_turtleTrigDoc(SerdReader* reader)
 static bool
 read_nquadsDoc(SerdReader* reader)
 {
-	while (!reader->eof) {
+	while (!reader->source.eof) {
 		SerdStatementFlags flags   = 0;
 		ReadContext        ctx     = { 0, 0, 0, 0, 0, 0, &flags };
 		bool               ate_dot = false;
 		char               s_type  = false;
 		read_ws_star(reader);
 		if (peek_byte(reader) == '\0') {
-			reader->eof = true;
+			reader->source.eof = true;
 			break;
 		} else if (peek_byte(reader) == '@') {
 			return r_err(reader, SERD_ERR_BAD_SYNTAX,
@@ -1759,7 +1739,6 @@ serd_reader_new(SerdSyntax        syntax,
                 SerdStatementSink statement_sink,
                 SerdEndSink       end_sink)
 {
-	const Cursor cur = { NULL, 0, 0 };
 	SerdReader*  me  = (SerdReader*)calloc(1, sizeof(SerdReader));
 	me->handle           = handle;
 	me->free_handle      = free_handle;
@@ -1770,7 +1749,6 @@ serd_reader_new(SerdSyntax        syntax,
 	me->default_graph    = SERD_NODE_NULL;
 	me->stack            = serd_stack_new(SERD_PAGE_SIZE);
 	me->syntax           = syntax;
-	me->cur              = cur;
 	me->next_id          = 1;
 	me->strict           = true;
 
@@ -1911,22 +1889,18 @@ serd_reader_start_source_stream(SerdReader*         reader,
                                 const uint8_t*      name,
                                 size_t              page_size)
 {
-	const Cursor cur = { name, 1, 1 };
-	reader->cur = cur;
-
 	return serd_byte_source_open_source(
-		&reader->source, read_func, error_func, stream, page_size);
+		&reader->source, read_func, error_func, stream, name, page_size);
 }
 
 static SerdStatus
 serd_reader_prepare(SerdReader* reader)
 {
-	reader->eof    = false;
 	reader->status = serd_byte_source_prepare(&reader->source);
 	if (reader->status == SERD_SUCCESS) {
 		reader->status = skip_bom(reader);
 	} else if (reader->status == SERD_FAILURE) {
-		reader->eof = true;
+		reader->source.eof = true;
 	} else {
 		r_err(reader, reader->status, "read error: %s\n", strerror(errno));
 	}
@@ -1942,8 +1916,8 @@ serd_reader_read_chunk(SerdReader* reader)
 		if ((st = serd_reader_prepare(reader))) {
 			return st;
 		}
-	} else if (reader->eof) {
-		reader->eof = false;
+	} else if (reader->source.eof) {
+		reader->source.eof = false;
 		if ((st = serd_byte_source_advance(&reader->source))) {
 			return st;
 		}
@@ -1996,11 +1970,7 @@ SERD_API
 SerdStatus
 serd_reader_read_string(SerdReader* reader, const uint8_t* utf8)
 {
-	const Cursor cur = { (const uint8_t*)"(string)", 1, 1 };
-
 	serd_byte_source_open_string(&reader->source, utf8);
-	reader->cur = cur;
-	reader->eof = false;
 
 	SerdStatus st = serd_reader_prepare(reader);
 	if (!st) {

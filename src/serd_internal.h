@@ -33,6 +33,9 @@
 #   include <fcntl.h>
 #endif
 
+#define NS_XSD "http://www.w3.org/2001/XMLSchema#"
+#define NS_RDF "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+
 #define SERD_PAGE_SIZE 4096
 
 #ifndef MIN
@@ -72,16 +75,24 @@ serd_bufalloc(size_t size)
 /* Byte source */
 
 typedef struct {
+	const uint8_t* filename;
+	unsigned       line;
+	unsigned       col;
+} Cursor;
+
+typedef struct {
 	SerdSource          read_func;    ///< Read function (e.g. fread)
 	SerdStreamErrorFunc error_func;   ///< Error function (e.g. ferror)
 	void*               stream;       ///< Stream (e.g. FILE)
 	size_t              page_size;    ///< Number of bytes to read at a time
+	Cursor              cur;          ///< Cursor for error reporting
 	uint8_t*            file_buf;     ///< Buffer iff reading pages from a file
 	const uint8_t*      read_buf;     ///< Pointer to file_buf or read_byte
 	size_t              read_head;    ///< Offset into read_buf
 	uint8_t             read_byte;    ///< 1-byte 'buffer' used when not paging
 	bool                from_stream;  ///< True iff reading from `stream`
 	bool                prepared;     ///< True iff prepared for reading
+	bool                eof;          ///< True iff end of file reached
 } SerdByteSource;
 
 SerdStatus
@@ -97,6 +108,7 @@ serd_byte_source_open_source(SerdByteSource*     source,
                              SerdSource          read_func,
                              SerdStreamErrorFunc error_func,
                              void*               stream,
+                             const uint8_t*      name,
                              size_t              page_size);
 
 SerdStatus
