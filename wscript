@@ -34,9 +34,9 @@ def options(ctx):
                        dest=name.replace('-', '_'), help=desc)
 
 def configure(conf):
-    conf.load('compiler_c')
-    autowaf.configure(conf)
     autowaf.display_header('Serd Configuration')
+    conf.load('compiler_c', cache=True)
+    conf.load('autowaf', cache=True)
 
     conf.env.update({
         'BUILD_UTILS':  not Options.options.no_utils,
@@ -57,16 +57,17 @@ def configure(conf):
         for name, header in {'posix_memalign': 'stdlib.h',
                              'posix_fadvise':  'fcntl.h',
                              'fileno':         'stdio.h'}.items():
-            conf.check(function_name = name,
-                       header_name   = header,
-                       define_name   = 'HAVE_' + name.upper(),
-                       defines       = ['_POSIX_C_SOURCE=200809L'],
-                       mandatory     = False)
+            autowaf.check_function(conf, 'c', name,
+                                   header_name = header,
+                                   define_name = 'HAVE_' + name.upper(),
+                                   defines     = ['_POSIX_C_SOURCE=200809L'],
+                                   mandatory   = False)
 
     autowaf.define(conf, 'SERD_VERSION', SERD_VERSION)
     autowaf.set_lib_env(conf, 'serd', SERD_VERSION)
     conf.write_config_header('serd_config.h', remove=False)
 
+    autowaf.display_summary(conf)
     autowaf.display_msg(conf, 'Static library', bool(conf.env.BUILD_STATIC))
     autowaf.display_msg(conf, 'Shared library', bool(conf.env.BUILD_SHARED))
     autowaf.display_msg(conf, 'Utilities', bool(conf.env.BUILD_UTILS))
@@ -100,7 +101,7 @@ def build(bld):
     if bld.env.MSVC_COMPILER:
         lib_args['cflags'] = []
         lib_args['lib']    = []
-        defines            = ['snprintf=_snprintf']
+        defines            = []
 
     # Shared Library
     if bld.env.BUILD_SHARED:
@@ -173,8 +174,14 @@ def build(bld):
 def lint(ctx):
     "checks code for style issues"
     import subprocess
-    subprocess.call('cpplint.py --filter=+whitespace/comments,-whitespace/tab,-whitespace/braces,-whitespace/labels,-build/header_guard,-readability/casting,-readability/todo,-build/include src/* serd/*', shell=True)
-    subprocess.call('clang-tidy -checks="*,-misc-unused-parameters,-readability-else-after-return,-llvm-header-guard,-google-readability-todo,-clang-analyzer-alpha.*" -extra-arg="-std=c99" -extra-arg="-I." -extra-arg="-Ibuild" ./serd/*.h ./src/*.c ./src/*.h', shell=True)
+    cmd = ("clang-tidy -p=. -header-filter=.* -checks=\"*," +
+           "-clang-analyzer-alpha.*," +
+           "-google-readability-todo," +
+           "-llvm-header-guard," +
+           "-misc-unused-parameters," +
+           "-readability-else-after-return\" " +
+           "../src/*.c")
+    subprocess.call(cmd, cwd='build', shell=True)
 
 def amalgamate(ctx):
     "builds single-file amalgamated source"
@@ -207,8 +214,8 @@ def upload_docs(ctx):
         os.system('rsync -avz --delete -e ssh build/%s.html drobilla@drobilla.net:~/drobilla.net/man/' % page)
 
 def file_equals(patha, pathb, subst_from='', subst_to=''):
-    with open(patha, 'rU') as fa:
-        with open(pathb, 'rU') as fb:
+    with open(patha, 'rU', encoding='utf-8') as fa:
+        with open(pathb, 'rU', encoding='utf-8') as fb:
             for linea in fa:
                 lineb = fb.readline()
                 if (linea.replace(subst_from, subst_to) !=
@@ -243,25 +250,36 @@ def earl_assertion(test, passed, asserter):
        datetime.datetime.now().replace(microsecond=0).isoformat())
 
 def check_output(out_filename, check_filename, subst_from='', subst_to=''):
+    import difflib
+    import sys
     if not os.access(out_filename, os.F_OK):
         Logs.pprint('RED', 'FAIL: output %s is missing' % out_filename)
     elif not file_equals(check_filename, out_filename, subst_from, subst_to):
         Logs.pprint('RED', 'FAIL: %s != %s' % (os.path.abspath(out_filename),
                                                check_filename))
+        with open(out_filename, encoding='utf-8') as out_file:
+            with open(check_filename, encoding='utf-8') as check_file:
+                diff = difflib.unified_diff(check_file.readlines(),
+                                            out_file.readlines(),
+                                            fromfile=check_filename,
+                                            tofile=out_filename)
+                for line in diff:
+                    sys.stderr.write(line)
     else:
         return True
 
     return False
 
-def test_thru(ctx, base, path, check_filename, flags, isyntax, osyntax, quiet=False):
+def test_thru(ctx, base, path, check_filename, flags, isyntax, osyntax,
+              options='', quiet=False):
     in_filename = os.path.join(ctx.path.abspath(), path);
     out_filename = path + '.thru'
 
-    command = ('%s %s -i %s -o %s -p foo "%s" "%s" | '
-               '%s -i %s -o %s -c foo - "%s" > %s') % (
-                   'serdi_static', flags.ljust(5),
+    command = ('serdi_static %s %s -i %s -o %s -p foo "%s" "%s" | '
+               'serdi_static %s -i %s -o %s -c foo - "%s" > %s') % (
+                   options, flags.ljust(5),
                    isyntax, isyntax, in_filename, base,
-                   'serdi_static', isyntax, osyntax, base, out_filename)
+                   options, isyntax, osyntax, base, out_filename)
 
     if autowaf.run_test(ctx, APPNAME, command, 0, name='  to ' + out_filename, quiet=quiet):
         autowaf.run_test(
@@ -273,8 +291,20 @@ def test_thru(ctx, base, path, check_filename, flags, isyntax, osyntax, quiet=Fa
     else:
         Logs.pprint('RED', 'FAIL: error running %s' % command)
 
-def test_suite(ctx, srcdir, base, testdir, report, isyntax, osyntax):
+def file_uri_to_path(uri):
+    try:
+        from urlparse import urlparse # Python 2
+    except:
+        from urllib.parse import urlparse # Python 3
+
+    path  = urlparse(uri).path
+    drive = os.path.splitdrive(path[1:])[0]
+    return path if not drive else path[1:]
+
+def test_suite(ctx, base_uri, testdir, report, isyntax, osyntax, options=''):
     import itertools
+
+    srcdir = ctx.path.abspath()
 
     def load_rdf(filename):
         "Load an RDF file into python dictionaries via serdi.  Only supports URIs."
@@ -293,7 +323,6 @@ def test_suite(ctx, srcdir, base, testdir, report, isyntax, osyntax):
         return model
 
     mf = 'http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#'
-    base_uri = os.path.join(base, testdir, '')
     model = load_rdf(os.path.join(srcdir, 'tests', testdir, 'manifest.ttl'))
 
     asserter = ''
@@ -316,31 +345,36 @@ def test_suite(ctx, srcdir, base, testdir, report, isyntax, osyntax):
         if len(tests) == 0:
             return
 
+        thru_flags   = ['-e', '-f', '-b', '-r http://example.org/']
+        thru_options = []
+        for n in range(len(thru_flags) + 1):
+            for flags in itertools.combinations(thru_flags, n):
+                thru_options += [flags]
+        thru_options_iter = itertools.cycle(thru_options)
+
         with autowaf.begin_tests(ctx, APPNAME, str(test_class)):
             for (num, test) in enumerate(tests):
                 action_node = model[test][mf + 'action'][0]
                 action      = os.path.join('tests', testdir, os.path.basename(action_node))
                 abs_action  = os.path.join(srcdir, action)
                 uri         = base_uri + os.path.basename(action)
-                command     = 'serdi_static -f "%s" "%s" > %s' % (
-                    abs_action, uri, action + '.out')
+                command     = 'serdi_static %s -f "%s" "%s" > %s' % (
+                    options, abs_action, uri, action + '.out')
 
                 # Run strict test
                 result = run_test(command, expected_return, action)
                 if (mf + 'result') in model[test]:
                     # Check output against test suite
-                    check_path = model[test][mf + 'result'][0][len('file://'):]
+                    check_uri  = model[test][mf + 'result'][0]
+                    check_path = file_uri_to_path(check_uri)
                     result     = autowaf.run_test(
                         ctx, APPNAME,
                         lambda: check_output(action + '.out', check_path),
                         True, name=str(action) + ' check', quiet=True)
 
                     # Run round-trip tests
-                    thru_flags = ['-b', '-e', '-f', '-r http://example.org/']
-                    for n in range(len(thru_flags) + 1):
-                        for flags in itertools.combinations(thru_flags, n):
-                            test_thru(ctx, uri, action, check_path,
-                                      ' '.join(flags), isyntax, osyntax, quiet=True)
+                    test_thru(ctx, uri, action, check_path,
+                              ' '.join(next(thru_options_iter)), isyntax, osyntax, options, quiet=True)
 
                 # Write test report entry
                 if report is not None:
@@ -430,8 +464,8 @@ def test(ctx):
 
     # Serd-specific test cases
     serd_base = 'http://drobilla.net/sw/serd/tests/'
-    test_suite(ctx, srcdir, serd_base, 'good', None, 'Turtle', 'NTriples')
-    test_suite(ctx, srcdir, serd_base, 'bad', None, 'Turtle', 'NTriples')
+    test_suite(ctx, serd_base + 'good/', 'good', None, 'Turtle', 'NTriples')
+    test_suite(ctx, serd_base + 'bad/', 'bad', None, 'Turtle', 'NTriples')
 
     # Standard test suites
     with open('earl.ttl', 'w') as report:
@@ -443,10 +477,12 @@ def test(ctx):
                 report.write(line)
 
         w3c_base = 'http://www.w3.org/2013/'
-        test_suite(ctx, srcdir, w3c_base, 'TurtleTests', report, 'Turtle', 'NTriples')
-        test_suite(ctx, srcdir, w3c_base, 'NTriplesTests', report, 'NTriples', 'NTriples')
-        test_suite(ctx, srcdir, w3c_base, 'NQuadsTests', report, 'NQuads', 'NQuads')
-        test_suite(ctx, srcdir, w3c_base, 'TriGTests', report, 'Trig', 'NQuads')
+        test_suite(ctx, w3c_base + 'NTriplesTests/',
+                   'NTriplesTests', report, 'NTriples', 'NTriples')
+        test_suite(ctx, w3c_base + 'NQuadsTests/',
+                   'NQuadsTests', report, 'NQuads', 'NQuads')
+        test_suite(ctx, w3c_base + 'TriGTests/',
+                   'TriGTests', report, 'TriG', 'NQuads', '-a')
 
     autowaf.post_test(ctx, APPNAME)
 
