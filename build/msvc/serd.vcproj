@@ -287,6 +287,10 @@
 				>
 			</File>
 			<File
+				RelativePath="..\..\src\n3.c"
+				>
+			</File>
+			<File
 				RelativePath="..\..\src\node.c"
 				>
 			</File>
@@ -311,6 +315,10 @@
 			Name="Header Files"
 			Filter="h;hpp;hxx;hm;inl"
 			>
+			<File
+				RelativePath="..\..\src\reader.h"
+				>
+			</File>
 			<File
 				RelativePath="..\..\serd\serd.h"
 				>
