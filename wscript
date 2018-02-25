@@ -77,6 +77,7 @@ def configure(conf):
 
 lib_source = ['src/byte_source.c',
               'src/env.c',
+              'src/n3.c',
               'src/node.c',
               'src/reader.c',
               'src/string.c',
@@ -354,7 +355,7 @@ def test_suite(ctx, base_uri, testdir, report, isyntax, osyntax, options=''):
         thru_options_iter = itertools.cycle(thru_options)
 
         with autowaf.begin_tests(ctx, APPNAME, str(test_class)):
-            for (num, test) in enumerate(tests):
+            for (num, test) in enumerate(sorted(tests)):
                 action_node = model[test][mf + 'action'][0]
                 action      = os.path.join('tests', testdir, os.path.basename(action_node))
                 abs_action  = os.path.join(srcdir, action)
@@ -415,13 +416,21 @@ def test(ctx):
     autowaf.pre_test(ctx, APPNAME)
     autowaf.run_test(ctx, APPNAME, 'serd_test', dirs=['.'])
 
-    autowaf.run_test(ctx, APPNAME,
-                     'serdi_static -q -o turtle "%s/tests/good/base.ttl" "base.ttl" > tests/good/base.ttl.out' % srcdir,
-                     0, name='base')
+    def test_ttl(in_name, expected_name):
+        in_path = 'tests/good/%s.ttl' % in_name
+        autowaf.run_test(
+            ctx, APPNAME,
+            'serdi_static -o turtle "%s/%s" "%s" > %s.out' % (srcdir, in_path, in_path, in_path),
+            0, name=in_name)
 
-    autowaf.run_test(ctx, APPNAME,
-                     lambda: file_equals('%s/tests/good/base.ttl' % srcdir, 'tests/good/base.ttl.out'),
-                     True, name='base-check')
+        autowaf.run_test(
+            ctx, APPNAME,
+            lambda: file_equals('%s.out' % in_path,
+                                '%s/tests/good/%s.ttl' % (srcdir, expected_name)),
+            True, name=in_name + '-check')
+
+    test_ttl('base', 'base')
+    test_ttl('qualify-in', 'qualify-out')
 
     nul = os.devnull
     autowaf.run_tests(ctx, APPNAME, [
@@ -486,6 +495,8 @@ def test(ctx):
                    'TriGTests', report, 'TriG', 'NQuads', '-a')
 
     autowaf.post_test(ctx, APPNAME)
+    if ctx.autowaf_tests[APPNAME]['failed'] > 0:
+        ctx.fatal('Failed %s tests' % APPNAME)
 
 def posts(ctx):
     path = str(ctx.path.abspath())
