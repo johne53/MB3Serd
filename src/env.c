@@ -31,7 +31,6 @@ struct SerdEnvImpl {
 	SerdURI     base_uri;
 };
 
-SERD_API
 SerdEnv*
 serd_env_new(const SerdNode* base_uri)
 {
@@ -42,7 +41,6 @@ serd_env_new(const SerdNode* base_uri)
 	return env;
 }
 
-SERD_API
 void
 serd_env_free(SerdEnv* env)
 {
@@ -55,7 +53,6 @@ serd_env_free(SerdEnv* env)
 	free(env);
 }
 
-SERD_API
 const SerdNode*
 serd_env_get_base_uri(const SerdEnv* env,
                       SerdURI*       out)
@@ -66,7 +63,6 @@ serd_env_get_base_uri(const SerdEnv* env,
 	return &env->base_uri_node;
 }
 
-SERD_API
 SerdStatus
 serd_env_set_base_uri(SerdEnv*        env,
                       const SerdNode* uri)
@@ -124,7 +120,6 @@ serd_env_add(SerdEnv*        env,
 	}
 }
 
-SERD_API
 SerdStatus
 serd_env_set_prefix(SerdEnv*        env,
                     const SerdNode* name,
@@ -148,7 +143,6 @@ serd_env_set_prefix(SerdEnv*        env,
 	return SERD_SUCCESS;
 }
 
-SERD_API
 SerdStatus
 serd_env_set_prefix_from_strings(SerdEnv*       env,
                                  const uint8_t* name,
@@ -160,28 +154,6 @@ serd_env_set_prefix_from_strings(SerdEnv*       env,
 	return serd_env_set_prefix(env, &name_node, &uri_node);
 }
 
-static inline bool
-is_nameChar(const uint8_t c)
-{
-	return is_alpha(c) || is_digit(c) || c == '_';
-}
-
-/**
-   Return true iff `buf` is a valid prefixed name suffix.
-   TODO: This is more strict than it should be.
-*/
-static inline bool
-is_name(const uint8_t* buf, size_t len)
-{
-	for (size_t i = 0; i < len; ++i) {
-		if (!is_nameChar(buf[i])) {
-			return false;
-		}
-	}
-	return true;
-}
-
-SERD_API
 bool
 serd_env_qualify(const SerdEnv*  env,
                  const SerdNode* uri,
@@ -197,16 +169,13 @@ serd_env_qualify(const SerdEnv*  env,
 				*prefix = env->prefixes[i].name;
 				suffix->buf = uri->buf + prefix_uri->n_bytes;
 				suffix->len = uri->n_bytes - prefix_uri->n_bytes;
-				if (is_name(suffix->buf, suffix->len)) {
-					return true;
-				}
+				return true;
 			}
 		}
 	}
 	return false;
 }
 
-SERD_API
 SerdStatus
 serd_env_expand(const SerdEnv*  env,
                 const SerdNode* curie,
@@ -215,8 +184,8 @@ serd_env_expand(const SerdEnv*  env,
 {
 	const uint8_t* const colon = (const uint8_t*)memchr(
 		curie->buf, ':', curie->n_bytes + 1);
-	if (!colon) {
-		return SERD_ERR_BAD_ARG;  // Invalid CURIE
+	if (curie->type != SERD_CURIE || !colon) {
+		return SERD_ERR_BAD_ARG;
 	}
 
 	const size_t            name_len = colon - curie->buf;
@@ -228,10 +197,9 @@ serd_env_expand(const SerdEnv*  env,
 		uri_suffix->len = curie->n_bytes - (colon - curie->buf) - 1;
 		return SERD_SUCCESS;
 	}
-	return SERD_ERR_NOT_FOUND;
+	return SERD_ERR_BAD_CURIE;
 }
 
-SERD_API
 SerdNode
 serd_env_expand_node(const SerdEnv*  env,
                      const SerdNode* node)
@@ -259,7 +227,6 @@ serd_env_expand_node(const SerdEnv*  env,
 	}
 }
 
-SERD_API
 void
 serd_env_foreach(const SerdEnv* env,
                  SerdPrefixSink func,

@@ -144,7 +144,7 @@ static inline SerdStack
 serd_stack_new(size_t size)
 {
 	SerdStack stack;
-	stack.buf       = (uint8_t*)malloc(size);
+	stack.buf       = (uint8_t*)calloc(1, size);
 	stack.buf_size  = size;
 	stack.size      = SERD_STACK_BOTTOM;
 	return stack;
@@ -431,9 +431,9 @@ uri_path_at(const SerdURI* uri, size_t i)
 	}
 }
 
-/** Return true iff `uri` is within the base of `root` */
+/** Return true iff `uri` shares path components with `root` */
 static inline bool
-uri_is_under(const SerdURI* uri, const SerdURI* root)
+uri_is_related(const SerdURI* uri, const SerdURI* root)
 {
 	if (!root || !root->scheme.len ||
 	    !chunk_equals(&root->scheme, &uri->scheme) ||
@@ -454,6 +454,13 @@ uri_is_under(const SerdURI* uri, const SerdURI* root)
 	}
 
 	return true;
+}
+
+/** Return true iff `uri` is within the base of `root` */
+static inline bool
+uri_is_under(const SerdURI* uri, const SerdURI* root)
+{
+	return uri->path.len >= root->path.len && uri_is_related(uri, root);
 }
 
 static inline bool

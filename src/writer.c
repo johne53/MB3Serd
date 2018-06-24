@@ -462,6 +462,19 @@ write_literal(SerdWriter*        writer,
 	return true;
 }
 
+// Return true iff `buf` is a valid prefixed name suffix
+static inline bool
+is_name(const uint8_t* buf, const size_t len)
+{
+	// TODO: This is more strict than it should be.
+	for (size_t i = 0; i < len; ++i) {
+		if (!(is_alpha(buf[i]) || is_digit(buf[i]))) {
+			return false;
+		}
+	}
+	return true;
+}
+
 static bool
 write_uri_node(SerdWriter* const        writer,
                const SerdNode*          node,
@@ -485,7 +498,8 @@ write_uri_node(SerdWriter* const        writer,
 	           && !strcmp((const char*)node->buf, NS_RDF "nil")) {
 		return sink("()", 2, writer) == 2;
 	} else if (has_scheme && (writer->style & SERD_STYLE_CURIED) &&
-	           serd_env_qualify(writer->env, node, &prefix, &suffix)) {
+	           serd_env_qualify(writer->env, node, &prefix, &suffix) &&
+	           is_name(suffix.buf, suffix.len)) {
 		write_uri(writer, prefix.buf, prefix.n_bytes);
 		sink(":", 1, writer);
 		write_uri(writer, suffix.buf, suffix.len);
@@ -525,14 +539,14 @@ write_curie(SerdWriter* const        writer,
             const Field              field,
             const SerdStatementFlags flags)
 {
-	SerdChunk prefix;
-	SerdChunk suffix;
+	SerdChunk  prefix;
+	SerdChunk  suffix;
+	SerdStatus st;
 	switch (writer->syntax) {
 	case SERD_NTRIPLES:
 	case SERD_NQUADS:
-		if (serd_env_expand(writer->env, node, &prefix, &suffix)) {
-			w_err(writer, SERD_ERR_BAD_CURIE,
-			      "undefined namespace prefix `%s'\n", node->buf);
+		if ((st = serd_env_expand(writer->env, node, &prefix, &suffix))) {
+			w_err(writer, st, "undefined namespace prefix `%s'\n", node->buf);
 			return false;
 		}
 		write_sep(writer, SEP_URI_BEGIN);
@@ -656,7 +670,6 @@ write_list_obj(SerdWriter*        writer,
 	return false;
 }
 
-SERD_API
 SerdStatus
 serd_writer_write_statement(SerdWriter*        writer,
                             SerdStatementFlags flags,
@@ -793,7 +806,6 @@ serd_writer_write_statement(SerdWriter*        writer,
 	return SERD_SUCCESS;
 }
 
-SERD_API
 SerdStatus
 serd_writer_end_anon(SerdWriter*     writer,
                      const SerdNode* node)
@@ -819,7 +831,6 @@ serd_writer_end_anon(SerdWriter*     writer,
 	return SERD_SUCCESS;
 }
 
-SERD_API
 SerdStatus
 serd_writer_finish(SerdWriter* writer)
 {
@@ -834,7 +845,6 @@ serd_writer_finish(SerdWriter* writer)
 	return free_context(writer);
 }
 
-SERD_API
 SerdWriter*
 serd_writer_new(SerdSyntax     syntax,
                 SerdStyle      style,
@@ -860,7 +870,6 @@ serd_writer_new(SerdSyntax     syntax,
 	return writer;
 }
 
-SERD_API
 void
 serd_writer_set_error_sink(SerdWriter*   writer,
                            SerdErrorSink error_sink,
@@ -870,7 +879,6 @@ serd_writer_set_error_sink(SerdWriter*   writer,
 	writer->error_handle = error_handle;
 }
 
-SERD_API
 void
 serd_writer_chop_blank_prefix(SerdWriter*    writer,
                               const uint8_t* prefix)
@@ -885,7 +893,6 @@ serd_writer_chop_blank_prefix(SerdWriter*    writer,
 	}
 }
 
-SERD_API
 SerdStatus
 serd_writer_set_base_uri(SerdWriter*     writer,
                          const SerdNode* uri)
@@ -908,7 +915,6 @@ serd_writer_set_base_uri(SerdWriter*     writer,
 	return SERD_ERR_UNKNOWN;
 }
 
-SERD_API
 SerdStatus
 serd_writer_set_root_uri(SerdWriter*     writer,
                          const SerdNode* uri)
@@ -924,7 +930,6 @@ serd_writer_set_root_uri(SerdWriter*     writer,
 	return SERD_SUCCESS;
 }
 
-SERD_API
 SerdStatus
 serd_writer_set_prefix(SerdWriter*     writer,
                        const SerdNode* name,
@@ -948,7 +953,6 @@ serd_writer_set_prefix(SerdWriter*     writer,
 	return SERD_ERR_UNKNOWN;
 }
 
-SERD_API
 void
 serd_writer_free(SerdWriter* writer)
 {
@@ -960,21 +964,18 @@ serd_writer_free(SerdWriter* writer)
 	free(writer);
 }
 
-SERD_API
 SerdEnv*
 serd_writer_get_env(SerdWriter* writer)
 {
 	return writer->env;
 }
 
-SERD_API
 size_t
 serd_file_sink(const void* buf, size_t len, void* stream)
 {
 	return fwrite(buf, 1, len, (FILE*)stream);
 }
 
-SERD_API
 size_t
 serd_chunk_sink(const void* buf, size_t len, void* stream)
 {
@@ -985,7 +986,6 @@ serd_chunk_sink(const void* buf, size_t len, void* stream)
 	return len;
 }
 
-SERD_API
 uint8_t*
 serd_chunk_sink_finish(SerdChunk* stream)
 {

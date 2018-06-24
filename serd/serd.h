@@ -119,7 +119,7 @@ typedef enum {
 	SERD_NQUADS = 3,
 
 	/**
-	   TRiG - Terse RDF quads (UTF-8).
+	   TriG - Terse RDF quads (UTF-8).
 	   @see <a href="https://www.w3.org/TR/trig/">Trig</a>
 	*/
 	SERD_TRIG = 4
@@ -324,6 +324,43 @@ serd_base64_decode(const uint8_t* str, size_t len, size_t* size);
 
 /**
    @}
+   @name Byte Streams
+   @{
+*/
+
+/**
+   Function to detect I/O stream errors.
+
+   Identical semantics to `ferror`.
+
+   @return Non-zero if `stream` has encountered an error.
+*/
+typedef int (*SerdStreamErrorFunc)(void* stream);
+
+/**
+   Source function for raw string input.
+
+   Identical semantics to `fread`, but may set errno for more informative error
+   reporting than supported by SerdStreamErrorFunc.
+
+   @param buf Output buffer.
+   @param size Size of a single element of data in bytes (always 1).
+   @param nmemb Number of elements to read.
+   @param stream Stream to read from (FILE* for fread).
+   @return Number of elements (bytes) read.
+*/
+typedef size_t (*SerdSource)(void*  buf,
+                             size_t size,
+                             size_t nmemb,
+                             void*  stream);
+
+/**
+   Sink function for raw string output.
+*/
+typedef size_t (*SerdSink)(const void* buf, size_t len, void* stream);
+
+/**
+   @}
    @name URI
    @{
 */
@@ -377,37 +414,6 @@ serd_uri_parse(const uint8_t* utf8, SerdURI* out);
 SERD_API
 void
 serd_uri_resolve(const SerdURI* r, const SerdURI* base, SerdURI* t);
-
-/**
-   Function to detect I/O stream errors.
-
-   Identical semantics to `ferror`.
-
-   @return Non-zero if `stream` has encountered an error.
-*/
-typedef int (*SerdStreamErrorFunc)(void* stream);
-
-/**
-   Source function for raw string input.
-
-   Identical semantics to `fread`, but may set errno for more informative error
-   reporting than supported by SerdStreamErrorFunc.
-
-   @param buf Output buffer.
-   @param size Size of a single element of data in bytes (always 1).
-   @param nmemb Number of elements to read.
-   @param stream Stream to read from (FILE* for fread).
-   @return Number of elements (bytes) read.
-*/
-typedef size_t (*SerdSource)(void*  buf,
-                             size_t size,
-                             size_t nmemb,
-                             void*  stream);
-
-/**
-   Sink function for raw string output.
-*/
-typedef size_t (*SerdSink)(const void* buf, size_t len, void* stream);
 
 /**
    Serialise `uri` with a series of calls to `sink`.
@@ -713,6 +719,9 @@ serd_env_qualify(const SerdEnv*  env,
 
 /**
    Expand `curie`.
+
+   Errors: SERD_ERR_BAD_ARG if `curie` is not valid, or SERD_ERR_BAD_CURIE if
+   prefix is not defined in `env`.
 */
 SERD_API
 SerdStatus
@@ -723,6 +732,8 @@ serd_env_expand(const SerdEnv*  env,
 
 /**
    Expand `node`, which must be a CURIE or URI, to a full URI.
+
+   Returns null if `node` can not be expanded.
 */
 SERD_API
 SerdNode

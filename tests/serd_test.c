@@ -244,6 +244,10 @@ main(void)
 		      str, len, flags);
 	}
 
+	if (serd_strlen(str, &n_bytes, NULL) != 5) {
+		FAILF("Bad serd_strlen(%s) n_bytes=%zu no flags\n", str, n_bytes);
+	}
+
 	// Test serd_strerror
 
 	const uint8_t* msg = NULL;
@@ -408,6 +412,18 @@ main(void)
 		FAILF("Bad relative URI %s (expected '/foo/bar')\n", rel.buf);
 	}
 
+	SerdNode up = serd_node_new_relative_uri(&base_uri, &abs_uri, NULL, NULL);
+	if (strcmp((const char*)up.buf, "../")) {
+		FAILF("Bad relative URI %s (expected '../')\n", up.buf);
+	}
+
+	SerdNode noup = serd_node_new_relative_uri(&base_uri, &abs_uri, &abs_uri, NULL);
+	if (strcmp((const char*)noup.buf, "http://example.org/")) {
+		FAILF("Bad relative URI %s (expected 'http://example.org/')\n", noup.buf);
+	}
+
+	serd_node_free(&noup);
+	serd_node_free(&up);
 	serd_node_free(&rel);
 	serd_node_free(&base);
 
