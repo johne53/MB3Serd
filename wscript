@@ -10,7 +10,7 @@ import waflib.extras.autowaf as autowaf
 # major increment <=> incompatible changes
 # minor increment <=> compatible changes (additions)
 # micro increment <=> no interface changes
-SERD_VERSION       = '0.29.2'
+SERD_VERSION       = '0.30.1'
 SERD_MAJOR_VERSION = '0'
 
 # Mandatory waf variables
@@ -38,6 +38,7 @@ def configure(conf):
     autowaf.display_header('Serd Configuration')
     conf.load('compiler_c', cache=True)
     conf.load('autowaf', cache=True)
+    autowaf.set_c_lang(conf, 'c99')
 
     conf.env.update({
         'BUILD_UTILS':  not Options.options.no_utils,
@@ -488,6 +489,8 @@ def test(ctx):
                 report.write(line)
 
         w3c_base = 'http://www.w3.org/2013/'
+        test_suite(ctx, w3c_base + 'TurtleTests/',
+                   'TurtleTests', report, 'Turtle', 'NTriples')
         test_suite(ctx, w3c_base + 'NTriplesTests/',
                    'NTriplesTests', report, 'NTriples', 'NTriples')
         test_suite(ctx, w3c_base + 'NQuadsTests/',

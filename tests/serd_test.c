@@ -106,8 +106,8 @@ check_file_uri(const char* hostname,
 		            path, node.buf, out_path);
 	}
 
-	free(out_path);
-	free(out_hostname);
+	serd_free(out_path);
+	serd_free(out_hostname);
 	serd_node_free(&node);
 	return ret;
 }
@@ -206,6 +206,9 @@ main(void)
 		if (blob.n_bytes != blob.n_chars) {
 			FAILF("Blob %zu bytes != %zu chars\n",
 			      blob.n_bytes, blob.n_chars);
+		} else if (blob.n_bytes != strlen((const char*)blob.buf)) {
+			FAILF("Blob %zu bytes != length %zu\n",
+			      blob.n_bytes, strlen((const char*)blob.buf));
 		}
 
 		size_t   out_size;
@@ -222,7 +225,7 @@ main(void)
 		}
 
 		serd_node_free(&blob);
-		free(out);
+		serd_free(out);
 		free(data);
 	}
 
@@ -322,7 +325,7 @@ main(void)
 	if (strcmp((const char*)out_path, "/foo/bar")) {
 		FAILF("bad tolerance of junk escape: `%s'\n", out_path);
 	}
-	free(out_path);
+	serd_free(out_path);
 
 	// Test serd_node_equals
 
@@ -422,6 +425,16 @@ main(void)
 		FAILF("Bad relative URI %s (expected 'http://example.org/')\n", noup.buf);
 	}
 
+	SerdNode x = serd_node_from_string(SERD_URI, USTR("http://example.org/foo/x"));
+	SerdURI  x_uri;
+	serd_uri_parse(x.buf, &x_uri);
+
+	SerdNode x_rel = serd_node_new_relative_uri(&x_uri, &abs_uri, &abs_uri, NULL);
+	if (strcmp((const char*)x_rel.buf, "x")) {
+		FAILF("Bad relative URI %s (expected 'x')\n", x_rel.buf);
+	}
+
+	serd_node_free(&x_rel);
 	serd_node_free(&noup);
 	serd_node_free(&up);
 	serd_node_free(&rel);
@@ -606,7 +619,7 @@ main(void)
 		FAILF("Incorrect chunk output:\n%s\n", chunk.buf);
 	}
 
-	free(out);
+	serd_free(out);
 
 	// Rewind and test reader
 	fseek(fd, 0, SEEK_SET);

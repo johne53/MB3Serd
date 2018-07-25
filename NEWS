@@ -1,5 +1,13 @@
-serd (0.29.3) unstable;
+serd (0.30.1) unstable;
 
+  * Fix GCC 4 build
+
+ -- David Robillard <d@drobilla.net>  Mon, 23 Jul 2018 23:14:40 +0200
+
+serd (0.30.0) stable;
+
+  * Upgrade to waf 2.0.9 and autowaf a328983
+  * Fix length of base64 encoded nodes
   * Clarify errors returned by serd_env_expand()
   * Fix reported error when reading statements with only a blank node
   * Fix parsing local names that end with escaped dots
@@ -14,8 +22,9 @@ serd (0.29.3) unstable;
   * Add NTriples test suite
   * Fix building with MSVC
   * Clean up testing code
+  * Add serd_free for freeing memory allocated by serd
 
- -- David Robillard <d@drobilla.net>  Sun, 27 May 2018 17:51:33 +0200
+ -- David Robillard <d@drobilla.net>  Sun, 22 Jul 2018 20:34:09 +0200
 
 serd (0.28.0) stable;
 
