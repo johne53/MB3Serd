@@ -42,6 +42,7 @@
 		<#test-list>
 		<#test-long-string>
 		<#test-no-spaces>
+		<#test-non-curie-uri>
 		<#test-num>
 		<#test-out-of-range-unicode>
 		<#test-prefix>
@@ -70,18 +71,6 @@
 	mf:name "manifest" ;
 	mf:action <manifest.ttl> ;
 	mf:result <manifest.nt> .
-
-<#rdf-schema>
-	rdf:type rdft:TestTurtleEval ;
-	mf:name "rdf-schema" ;
-	mf:action <rdf-schema.ttl> ;
-	mf:result <rdf-schema.nt> .
-
-<#rdfs-namespace>
-	rdf:type rdft:TestTurtleEval ;
-	mf:name "rdfs-namespace" ;
-	mf:action <rdfs-namespace.ttl> ;
-	mf:result <rdfs-namespace.nt> .
 
 <#test-14>
 	rdf:type rdft:TestTurtleEval ;
@@ -262,6 +251,12 @@
 	mf:name "test-no-spaces" ;
 	mf:action <test-no-spaces.ttl> ;
 	mf:result <test-no-spaces.nt> .
+
+<#test-non-curie-uri>
+	rdf:type rdft:TestTurtleEval ;
+	mf:name "test-non-curie-uri" ;
+	mf:action <test-non-curie-uri.ttl> ;
+	mf:result <test-non-curie-uri.nt> .
 
 <#test-num>
 	rdf:type rdft:TestTurtleEval ;
