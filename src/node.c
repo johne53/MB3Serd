@@ -16,11 +16,10 @@
 
 #include "serd_internal.h"
 
+#include <float.h>
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
-
-#include <math.h>
-#include <float.h>
 
 #ifdef _WIN32
 #    ifndef isnan
@@ -291,7 +290,7 @@ serd_node_new_decimal(double d, unsigned frac_digits)
 		*s++ = '0';
 		node.n_bytes = node.n_chars = (s - buf);
 	} else {
-		uint64_t frac = frac_part * pow(10.0, (int)frac_digits) + 0.5;
+		uint64_t frac = llround(frac_part * pow(10.0, (int)frac_digits));
 		s += frac_digits - 1;
 		unsigned i = 0;
 

@@ -213,7 +213,7 @@ static SerdStatus
 read_utf8_code(SerdReader* reader, Ref dest, uint32_t* code, uint8_t c)
 {
 	uint32_t   size;
-	uint8_t    bytes[4];
+	uint8_t    bytes[4] = { 0, 0, 0, 0 };
 	SerdStatus st = read_utf8_bytes(reader, bytes, &size, c);
 	if (st) {
 		push_bytes(reader, dest, replacement_char, 3);
@@ -305,32 +305,28 @@ read_STRING_LITERAL_LONG(SerdReader* reader, SerdNodeFlags* flags, uint8_t q)
 	Ref ref = push_node(reader, SERD_LITERAL, "", 0);
 	while (!reader->status) {
 		const uint8_t c = peek_byte(reader);
-		uint32_t      code;
-		switch (c) {
-		case '\\':
+		if (c == '\\') {
 			eat_byte_safe(reader, c);
+			uint32_t code;
 			if (!read_ECHAR(reader, ref, flags) &&
 			    !read_UCHAR(reader, ref, &code)) {
 				r_err(reader, SERD_ERR_BAD_SYNTAX,
 				      "invalid escape `\\%c'\n", peek_byte(reader));
 				return pop_node(reader, ref);
 			}
-			break;
-		default:
-			if (c == q) {
-				eat_byte_safe(reader, q);
-				const uint8_t q2 = eat_byte_safe(reader, peek_byte(reader));
-				const uint8_t q3 = peek_byte(reader);
-				if (q2 == q && q3 == q) {  // End of string
-					eat_byte_safe(reader, q3);
-					return ref;
-				}
-				*flags |= SERD_HAS_QUOTE;
-				push_byte(reader, ref, c);
-				read_character(reader, ref, flags, q2);
-			} else {
-				read_character(reader, ref, flags, eat_byte_safe(reader, c));
+		} else if (c == q) {
+			eat_byte_safe(reader, q);
+			const uint8_t q2 = eat_byte_safe(reader, peek_byte(reader));
+			const uint8_t q3 = peek_byte(reader);
+			if (q2 == q && q3 == q) {  // End of string
+				eat_byte_safe(reader, q3);
+				return ref;
 			}
+			*flags |= SERD_HAS_QUOTE;
+			push_byte(reader, ref, c);
+			read_character(reader, ref, flags, q2);
+		} else {
+			read_character(reader, ref, flags, eat_byte_safe(reader, c));
 		}
 	}
 	return ref;
@@ -1191,7 +1187,7 @@ read_subject(SerdReader* reader, ReadContext ctx, Ref* dest, char* s_type)
 }
 
 static Ref
-read_labelOrSubject(SerdReader* reader, ReadContext ctx)
+read_labelOrSubject(SerdReader* reader)
 {
 	Ref  subject = 0;
 	bool ate_dot = false;
@@ -1392,7 +1388,7 @@ read_n3_statement(SerdReader* reader)
 			ret = read_prefixID(reader, true, false);
 		} else if (!tokcmp(reader, ctx.subject, "graph", 5)) {
 			read_ws_star(reader);
-			TRY_RET((ctx.graph = read_labelOrSubject(reader, ctx)));
+			TRY_RET((ctx.graph = read_labelOrSubject(reader)));
 			read_ws_star(reader);
 			TRY_RET(read_wrappedGraph(reader, &ctx));
 			pop_node(reader, ctx.graph);
