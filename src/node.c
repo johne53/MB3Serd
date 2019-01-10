@@ -290,7 +290,12 @@ serd_node_new_decimal(double d, unsigned frac_digits)
 		*s++ = '0';
 		node.n_bytes = node.n_chars = (s - buf);
 	} else {
+#if (!defined (_MSC_VER) || (_MSC_VER >= 1910))
+		// Added by JE - 10-01-2019 (for MSVC, llround() only became available in VS2017)
 		uint64_t frac = llround(frac_part * pow(10.0, (int)frac_digits));
+#else
+		uint64_t frac = frac_part * pow(10.0, (int)frac_digits) + 0.5;
+#endif
 		s += frac_digits - 1;
 		unsigned i = 0;
 
