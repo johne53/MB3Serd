@@ -3,6 +3,7 @@
 import glob
 import io
 import os
+
 from waflib import Logs, Options
 from waflib.extras import autowaf
 
@@ -21,10 +22,8 @@ out     = 'build'       # Build directory
 
 def options(ctx):
     ctx.load('compiler_c')
-    autowaf.set_options(ctx, test=True)
-    opt = ctx.get_option_group('Configuration options')
-    autowaf.add_flags(
-        opt,
+    ctx.add_flags(
+        ctx.configuration_options(),
         {'no-utils':     'do not build command line utilities',
          'stack-check':  'include runtime stack sanity checks',
          'static':       'build static library',
@@ -34,7 +33,6 @@ def options(ctx):
          'no-posix':     'do not use POSIX functions, even if present'})
 
 def configure(conf):
-    autowaf.display_header('Serd Configuration')
     conf.load('compiler_c', cache=True)
     conf.load('autowaf', cache=True)
     autowaf.set_c_lang(conf, 'c99')
@@ -216,32 +214,12 @@ def upload_docs(ctx):
         os.system('soelim %s | pre-grohtml troff -man -wall -Thtml | post-grohtml > build/%s.html' % (page, page))
         os.system('rsync -avz --delete -e ssh build/%s.html drobilla@drobilla.net:~/drobilla.net/man/' % page)
 
-def file_equals(patha, pathb, subst_from='', subst_to=''):
-    with io.open(patha, 'rU', encoding='utf-8') as fa:
-        with io.open(pathb, 'rU', encoding='utf-8') as fb:
-            for linea in fa:
-                lineb = fb.readline()
-                if (linea.replace(subst_from, subst_to) !=
-                    lineb.replace(subst_from, subst_to)):
-                    fa.seek(0)
-                    fb.seek(0)
-                    show_diff(fa.readlines(),
-                              fb.readlines(),
-                              patha,
-                              pathb)
-                    return False
-    return True
-
 def earl_assertion(test, passed, asserter):
     import datetime
 
     asserter_str = ''
     if asserter is not None:
         asserter_str = '\n\tearl:assertedBy <%s> ;' % asserter
-
-    passed_str = 'earl:failed'
-    if passed:
-        passed_str = 'earl:passed'
 
     return '''
 []
@@ -255,50 +233,30 @@ def earl_assertion(test, passed, asserter):
 	] .
 ''' % (asserter_str,
        test,
-       passed_str,
+       'earl:passed' if passed else 'earl:failed',
        datetime.datetime.now().replace(microsecond=0).isoformat())
 
-def show_diff(from_lines, to_lines, from_filename, to_filename):
-    import difflib
-    import sys
+serdi = './serdi_static'
 
-    for line in difflib.unified_diff(
-            from_lines, to_lines,
-            fromfile=os.path.abspath(from_filename),
-            tofile=os.path.abspath(to_filename)):
-        sys.stderr.write(line)
+def test_thru(check, base, path, check_path, flags, isyntax, osyntax, opts=[]):
+    out_path = path + '.pass'
+    out_cmd = [serdi] + opts + [f for sublist in flags for f in sublist] + [
+        '-i', isyntax,
+        '-o', isyntax,
+        '-p', 'foo',
+        check.tst.src_path(path), base]
 
-def check_output(out_filename, check_filename, subst_from='', subst_to=''):
-    if not os.access(out_filename, os.F_OK):
-        Logs.pprint('RED', 'FAIL: output %s is missing' % out_filename)
-    elif not file_equals(check_filename, out_filename, subst_from, subst_to):
-        Logs.pprint('RED', 'FAIL: %s != %s' % (os.path.abspath(out_filename),
-                                               check_filename))
-    else:
-        return True
+    thru_path = path + '.thru'
+    thru_cmd = [serdi] + opts + [
+        '-i', isyntax,
+        '-o', osyntax,
+        '-c', 'foo',
+        out_path,
+        base]
 
-    return False
-
-def test_thru(ctx, base, path, check_filename, flags, isyntax, osyntax,
-              options='', quiet=False):
-    in_filename = os.path.join(ctx.path.abspath(), path)
-    out_filename = path + '.thru'
-
-    command = ('serdi_static %s %s -i %s -o %s -p foo "%s" "%s" | '
-               'serdi_static %s -i %s -o %s -c foo - "%s" > %s') % (
-                   options, flags.ljust(5),
-                   isyntax, isyntax, in_filename, base,
-                   options, isyntax, osyntax, base, out_filename)
-
-    if autowaf.run_test(ctx, APPNAME, command, 0, name='  to ' + out_filename, quiet=quiet):
-        autowaf.run_test(
-            ctx, APPNAME,
-            lambda: check_output(out_filename, check_filename, '_:docid', '_:genid'),
-            True,
-            name='from ' + out_filename,
-            quiet=quiet)
-    else:
-        Logs.pprint('RED', 'FAIL: error running %s' % command)
+    return (check(out_cmd, stdout=out_path, verbosity=0, name=out_path) and
+            check(thru_cmd, stdout=thru_path, verbosity=0, name=thru_path) and
+            check.file_equals(check_path, thru_path, verbosity=0))
 
 def file_uri_to_path(uri):
     try:
@@ -310,185 +268,174 @@ def file_uri_to_path(uri):
     drive = os.path.splitdrive(path[1:])[0]
     return path if not drive else path[1:]
 
-def test_suite(ctx, base_uri, testdir, report, isyntax, osyntax, options=''):
+def _test_output_syntax(test_class):
+    if 'NTriples' in test_class or 'Turtle' in test_class:
+        return 'NTriples'
+    elif 'NQuads' in test_class or 'Trig' in test_class:
+        return 'NQuads'
+    raise Exception('Unknown test class <%s>' % test_class)
+
+def _load_rdf(filename):
+    "Load an RDF file into python dictionaries via serdi.  Only supports URIs."
+    import subprocess
+    import re
+
+    rdf_type = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type'
+    model = {}
+    instances = {}
+    proc  = subprocess.Popen(['./serdi_static', filename], stdout=subprocess.PIPE)
+    for line in proc.communicate()[0].splitlines():
+        matches = re.match('<([^ ]*)> <([^ ]*)> <([^ ]*)> \.', line.decode('utf-8'))
+        if matches:
+            s, p, o = (matches.group(1), matches.group(2), matches.group(3))
+            if s not in model:
+                model[s] = {p: [o]}
+            elif p not in model[s]:
+                model[s][p] = [o]
+            else:
+                model[s][p].append(o)
+
+            if p == rdf_type:
+                if o not in instances:
+                    instances[o] = set([s])
+                else:
+                    instances[o].update([s])
+
+    return model, instances
+
+def test_suite(ctx, base_uri, testdir, report, isyntax, options=[]):
     import itertools
 
     srcdir = ctx.path.abspath()
 
-    def load_rdf(filename):
-        "Load an RDF file into python dictionaries via serdi.  Only supports URIs."
-        import subprocess
-        import re
-        model = {}
-        proc  = subprocess.Popen(['./serdi_static', filename], stdout=subprocess.PIPE)
-        for line in proc.communicate()[0].splitlines():
-            matches = re.match('<([^ ]*)> <([^ ]*)> <([^ ]*)> \.', line.decode('utf-8'))
-            if matches:
-                if matches.group(1) not in model:
-                    model[matches.group(1)] = {}
-                if matches.group(2) not in model[matches.group(1)]:
-                    model[matches.group(1)][matches.group(2)] = []
-                model[matches.group(1)][matches.group(2)] += [matches.group(3)]
-        return model
-
     mf = 'http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#'
-    model = load_rdf(os.path.join(srcdir, 'tests', testdir, 'manifest.ttl'))
+    manifest_path = os.path.join(srcdir, 'tests', testdir, 'manifest.ttl')
+    model, instances = _load_rdf(manifest_path)
 
     asserter = ''
     if os.getenv('USER') == 'drobilla':
         asserter = 'http://drobilla.net/drobilla#me'
 
-    def run_test(command, expected_return, name, quiet=False):
-        header = Options.options.verbose
-        result = autowaf.run_test(ctx, APPNAME, command, expected_return, name=name, header=header, quiet=quiet)
-        if expected_return is not None and expected_return != 0:
-            autowaf.run_test(ctx, APPNAME,
-                             lambda: bool(result[1][1]),
-                             True, name=name + ' prints error message', quiet=True)
-        return result
-
-    def run_tests(test_class, expected_return):
-        tests = []
-        for s, desc in model.items():
-            if test_class in desc['http://www.w3.org/1999/02/22-rdf-syntax-ns#type']:
-                tests += [s]
-        if len(tests) == 0:
-            return
-
-        thru_flags   = ['-e', '-f', '-b', '-r http://example.org/']
+    def run_tests(test_class, tests, expected_return):
+        thru_flags   = [['-e'], ['-f'], ['-b'], ['-r', 'http://example.org/']]
         thru_options = []
         for n in range(len(thru_flags) + 1):
             thru_options += list(itertools.combinations(thru_flags, n))
         thru_options_iter = itertools.cycle(thru_options)
 
-        quiet = not Options.options.verbose
+        osyntax = _test_output_syntax(test_class)
         tests_name = '%s.%s' % (testdir, test_class[test_class.find('#') + 1:])
-        with autowaf.begin_tests(ctx, APPNAME, tests_name):
-            for (num, test) in enumerate(sorted(tests)):
+        with ctx.group(tests_name) as check:
+            for test in sorted(tests):
                 action_node = model[test][mf + 'action'][0]
                 action      = os.path.join('tests', testdir, os.path.basename(action_node))
                 rel_action  = os.path.join(os.path.relpath(srcdir), action)
-                abs_action  = os.path.join(srcdir, action)
                 uri         = base_uri + os.path.basename(action)
-                command     = 'serdi_static %s -f %s "%s" > %s' % (
-                    options, rel_action, uri, action + '.out')
+                command     = [serdi] + options + ['-f', rel_action, uri]
 
                 # Run strict test
-                result = run_test(command, expected_return, action, quiet=quiet)
-                if (mf + 'result') in model[test]:
+                if expected_return == 0:
+                    result = check(command, stdout=action + '.out', name=action)
+                else:
+                    result = check(command,
+                                   stdout=action + '.out',
+                                   stderr=autowaf.NONEMPTY,
+                                   expected=expected_return,
+                                   name=action)
+
+                if result and ((mf + 'result') in model[test]):
                     # Check output against test suite
                     check_uri  = model[test][mf + 'result'][0]
-                    check_path = file_uri_to_path(check_uri)
-                    result     = autowaf.run_test(
-                        ctx, APPNAME,
-                        lambda: check_output(action + '.out', check_path),
-                        True, name=str(action) + ' check', quiet=True)
+                    check_path = ctx.src_path(file_uri_to_path(check_uri))
+                    result     = check.file_equals(action + '.out', check_path)
 
                     # Run round-trip tests
-                    test_thru(ctx, uri, action, check_path,
-                              ' '.join(next(thru_options_iter)), isyntax, osyntax, options, quiet=True)
+                    if result:
+                        test_thru(check, uri, action, check_path,
+                                  list(next(thru_options_iter)),
+                                  isyntax, osyntax, options)
 
                 # Write test report entry
                 if report is not None:
-                    report.write(earl_assertion(test, result[0], asserter))
+                    report.write(earl_assertion(test, result, asserter))
 
                 # Run lax test
-                run_test(command.replace('serdi_static', 'serdi_static -l'),
-                         None, action + ' lax', True)
+                check([command[0]] + ['-l'] + command[1:],
+                      expected=None, name=action + ' lax')
 
-    def test_types():
-        types = []
-        for lang in ['Turtle', 'NTriples', 'Trig', 'NQuads']:
-            types += [['http://www.w3.org/ns/rdftest#Test%sPositiveSyntax' % lang, 0],
-                      ['http://www.w3.org/ns/rdftest#Test%sNegativeSyntax' % lang, 1],
-                      ['http://www.w3.org/ns/rdftest#Test%sNegativeEval' % lang, 1],
-                      ['http://www.w3.org/ns/rdftest#Test%sEval' % lang, 0]]
-        return types
+    ns_rdftest = 'http://www.w3.org/ns/rdftest#'
+    for test_class, instances in instances.items():
+        if test_class.startswith(ns_rdftest):
+            expected = 1 if 'Negative' in test_class else 0
+            run_tests(test_class, instances, expected)
 
-    for i in test_types():
-        run_tests(i[0], i[1])
-
-def test(ctx):
-    "runs test suite"
+def test(tst):
+    import tempfile
 
     # Create test output directories
     for i in ['bad', 'good', 'TurtleTests', 'NTriplesTests', 'NQuadsTests', 'TriGTests']:
         try:
-            test_dir = os.path.join(autowaf.build_dir(APPNAME, 'tests'), i)
+            test_dir = os.path.join('tests', i)
             os.makedirs(test_dir)
             for i in glob.glob(test_dir + '/*.*'):
                 os.remove(i)
         except:
             pass
 
-    srcdir = ctx.path.abspath()
-    os.environ['PATH'] = '.' + os.pathsep + os.getenv('PATH')
+    srcdir = tst.path.abspath()
 
-    autowaf.pre_test(ctx, APPNAME)
-    autowaf.run_tests(ctx, APPNAME, ['serd_test'], name='Unit')
+    with tst.group('Unit') as check:
+        check(['./serd_test'])
 
-    def test_syntax_io(in_name, expected_name, lang):
+    def test_syntax_io(check, in_name, check_name, lang):
         in_path = 'tests/good/%s' % in_name
-        autowaf.run_test(
-            ctx, APPNAME,
-            'serdi_static -o %s "%s/%s" "%s" > %s.out' % (
-                lang, srcdir, in_path, in_path, in_path),
-            0, name=in_name)
+        out_path = in_path + '.io'
+        check_path = '%s/tests/good/%s' % (srcdir, check_name)
 
-        autowaf.run_test(
-            ctx, APPNAME,
-            lambda: file_equals('%s/tests/good/%s' % (srcdir, expected_name),
-                                '%s.out' % in_path),
-            True, quiet=True, name=in_name + '-check')
+        check([serdi, '-o', lang, '%s/%s' % (srcdir, in_path), in_path],
+              stdout=out_path, name=in_name)
 
-    with autowaf.begin_tests(ctx, APPNAME, 'ThroughSyntax'):
-        test_syntax_io('base.ttl',       'base.ttl',        'turtle')
-        test_syntax_io('qualify-in.ttl', 'qualify-out.ttl', 'turtle')
+        check.file_equals(check_path, out_path)
 
-    nul = os.devnull
-    autowaf.run_tests(ctx, APPNAME, [
-            'serdi_static %s/tests/good/manifest.ttl > %s' % (srcdir, nul),
-            'serdi_static -v > %s' % nul,
-            'serdi_static -h > %s' % nul,
-            'serdi_static -s "<foo> a <#Thingie> ." > %s' % nul,
-            'serdi_static %s > %s' % (nul, nul)
-    ], 0, name='GoodCommands')
+    with tst.group('ThroughSyntax') as check:
+        test_syntax_io(check, 'base.ttl',       'base.ttl',        'turtle')
+        test_syntax_io(check, 'qualify-in.ttl', 'qualify-out.ttl', 'turtle')
 
-    autowaf.run_tests(ctx, APPNAME, [
-            'serdi_static -q %s/tests/bad/bad-id-clash.ttl > %s' % (srcdir, nul),
-            'serdi_static > %s' % nul,
-            'serdi_static ftp://example.org/unsupported.ttl > %s' % nul,
-            'serdi_static -i > %s' % nul,
-            'serdi_static -o > %s' % nul,
-            'serdi_static -z > %s' % nul,
-            'serdi_static -p > %s' % nul,
-            'serdi_static -c > %s' % nul,
-            'serdi_static -r > %s' % nul,
-            'serdi_static -i illegal > %s' % nul,
-            'serdi_static -o illegal > %s' % nul,
-            'serdi_static -i turtle > %s' % nul,
-            'serdi_static /no/such/file > %s' % nul],
-                      1, name='BadCommands')
+    with tst.group('GoodCommands') as check:
+        check([serdi, '%s/tests/good/manifest.ttl' % srcdir])
+        check([serdi, '-v'])
+        check([serdi, '-h'])
+        check([serdi, '-s', '<foo> a <#Thingie> .'])
+        check([serdi, os.devnull])
+        with tempfile.TemporaryFile(mode='r') as stdin:
+            check([serdi, '-'], stdin=stdin)
 
-    with autowaf.begin_tests(ctx, APPNAME, 'IoErrors'):
-        # Test read error by reading a directory
-        autowaf.run_test(ctx, APPNAME, 'serdi_static -e "file://%s/"' % srcdir,
-                         1, name='read_error')
+    with tst.group('BadCommands', expected=1) as check:
+        check([serdi])
+        check([serdi, '/no/such/file'])
+        check([serdi, 'ftp://example.org/unsupported.ttl'])
+        check([serdi, '-c'])
+        check([serdi, '-i', 'illegal'])
+        check([serdi, '-i', 'turtle'])
+        check([serdi, '-i'])
+        check([serdi, '-o', 'illegal'])
+        check([serdi, '-o'])
+        check([serdi, '-p'])
+        check([serdi, '-q', '%s/tests/bad/bad-id-clash.ttl' % srcdir])
+        check([serdi, '-r'])
+        check([serdi, '-z'])
 
-        # Test read error with bulk input by reading a directory
-        autowaf.run_test(ctx, APPNAME, 'serdi_static "file://%s/"' % srcdir,
-                         1, name='read_error_bulk')
-
-        # Test write error by writing to /dev/full
+    with tst.group('IoErrors', expected=1) as check:
+        check([serdi, '-e', 'file://%s/' % srcdir], name='Read directory')
+        check([serdi, 'file://%s/' % srcdir], name='Bulk read directory')
         if os.path.exists('/dev/full'):
-            autowaf.run_test(ctx, APPNAME,
-                             'serdi_static "file://%s/tests/good/manifest.ttl" > /dev/full' % srcdir,
-                             1, name='write_error')
+            check([serdi, 'file://%s/tests/good/manifest.ttl' % srcdir],
+                  stdout='/dev/full', name='Write error')
 
-    # Serd-specific test cases
+    # Serd-specific test suites
     serd_base = 'http://drobilla.net/sw/serd/tests/'
-    test_suite(ctx, serd_base + 'good/', 'good', None, 'Turtle', 'NTriples')
-    test_suite(ctx, serd_base + 'bad/', 'bad', None, 'Turtle', 'NTriples')
+    test_suite(tst, serd_base + 'good/', 'good', None, 'Turtle')
+    test_suite(tst, serd_base + 'bad/', 'bad', None, 'Turtle')
 
     # Standard test suites
     with open('earl.ttl', 'w') as report:
@@ -496,20 +443,17 @@ def test(ctx):
                      '@prefix dc: <http://purl.org/dc/elements/1.1/> .\n')
 
         with open(os.path.join(srcdir, 'serd.ttl')) as serd_ttl:
-            for line in serd_ttl:
-                report.write(line)
+            report.writelines(serd_ttl)
 
         w3c_base = 'http://www.w3.org/2013/'
-        test_suite(ctx, w3c_base + 'TurtleTests/',
-                   'TurtleTests', report, 'Turtle', 'NTriples')
-        test_suite(ctx, w3c_base + 'NTriplesTests/',
-                   'NTriplesTests', report, 'NTriples', 'NTriples')
-        test_suite(ctx, w3c_base + 'NQuadsTests/',
-                   'NQuadsTests', report, 'NQuads', 'NQuads')
-        test_suite(ctx, w3c_base + 'TriGTests/',
-                   'TriGTests', report, 'TriG', 'NQuads', '-a')
-
-    autowaf.post_test(ctx, APPNAME)
+        test_suite(tst, w3c_base + 'TurtleTests/',
+                   'TurtleTests', report, 'Turtle')
+        test_suite(tst, w3c_base + 'NTriplesTests/',
+                   'NTriplesTests', report, 'NTriples')
+        test_suite(tst, w3c_base + 'NQuadsTests/',
+                   'NQuadsTests', report, 'NQuads')
+        test_suite(tst, w3c_base + 'TriGTests/',
+                   'TriGTests', report, 'Trig', ['-a'])
 
 def posts(ctx):
     path = str(ctx.path.abspath())
