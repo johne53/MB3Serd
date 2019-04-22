@@ -70,7 +70,7 @@ def configure(conf):
         {'Build static library': bool(conf.env['BUILD_STATIC']),
          'Build shared library': bool(conf.env['BUILD_SHARED']),
          'Build utilities':      bool(conf.env['BUILD_UTILS']),
-         'Build unit tests':     conf.is_defined('HAVE_GL')})
+         'Build unit tests':     bool(conf.env['BUILD_TESTS'])})
 
 lib_source = ['src/byte_source.c',
               'src/env.c',
@@ -281,7 +281,12 @@ def _load_rdf(filename):
     rdf_type = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type'
     model = {}
     instances = {}
-    proc  = subprocess.Popen(['./serdi_static', filename], stdout=subprocess.PIPE)
+
+    cmd = ['./serdi_static', filename]
+    if Options.options.test_wrapper:
+        cmd = [Options.options.test_wrapper] + cmd
+
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE)
     for line in proc.communicate()[0].splitlines():
         matches = re.match('<([^ ]*)> <([^ ]*)> <([^ ]*)> \.', line.decode('utf-8'))
         if matches:
