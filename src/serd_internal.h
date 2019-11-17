@@ -33,6 +33,11 @@
 #   include <fcntl.h>
 #endif
 
+// Added by JE - 17-11-2019
+#ifndef UINT8_MAX
+#   define UINT8_MAX 0xffui8
+#endif
+
 #define NS_XSD "http://www.w3.org/2001/XMLSchema#"
 #define NS_RDF "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
 
