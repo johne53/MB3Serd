@@ -17,3 +17,7 @@
 *.RTF	 diff=astextplain
 
 waf binary
+*.nq -text
+*.nt -text
+*.trig -text
+*.ttl -text
