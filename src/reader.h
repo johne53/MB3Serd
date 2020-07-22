@@ -19,7 +19,9 @@
 #include "serd/serd.h"
 
 #include <assert.h>
+#if (!defined (_MSC_VER) || (_MSC_VER >= 1900)) // Test added by JE - 10-01-2019
 #include <stdbool.h>
+#endif
 #include <stdint.h>
 #include <stdio.h>
 
