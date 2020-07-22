@@ -1,18 +1,17 @@
 #!/usr/bin/env python
 
 import glob
-import io
 import os
 import sys
 
-from waflib import Logs, Options
+from waflib import Build, Logs, Options
 from waflib.extras import autowaf
 
 # Library and package version (UNIX style major, minor, micro)
 # major increment <=> incompatible changes
 # minor increment <=> compatible changes (additions)
 # micro increment <=> no interface changes
-SERD_VERSION       = '0.30.4'
+SERD_VERSION       = '0.30.5'
 SERD_MAJOR_VERSION = '0'
 
 # Mandatory waf variables
@@ -26,6 +25,7 @@ uri          = 'http://drobilla.net/sw/serd'
 dist_pattern = 'http://download.drobilla.net/serd-%d.%d.%d.tar.bz2'
 post_tags    = ['Hacking', 'RDF', 'Serd']
 
+
 def options(ctx):
     ctx.load('compiler_c')
     ctx.add_flags(
@@ -38,16 +38,72 @@ def options(ctx):
          'largefile':    'build with large file support on 32-bit systems',
          'no-posix':     'do not use POSIX functions, even if present'})
 
+
 def configure(conf):
     conf.load('compiler_c', cache=True)
     conf.load('autowaf', cache=True)
     autowaf.set_c_lang(conf, 'c99')
 
+    if Options.options.strict:
+        # Check for programs used by lint target
+        conf.find_program("flake8", var="FLAKE8", mandatory=False)
+        conf.find_program("clang-tidy", var="CLANG_TIDY", mandatory=False)
+        conf.find_program("iwyu_tool", var="IWYU_TOOL", mandatory=False)
+
+    if Options.options.ultra_strict:
+        autowaf.add_compiler_flags(conf.env, '*', {
+            'clang': [
+                '-Wno-cast-align',
+                '-Wno-cast-qual',
+                '-Wno-covered-switch-default',
+                '-Wno-disabled-macro-expansion',
+                '-Wno-double-promotion',
+                '-Wno-format-nonliteral',
+                '-Wno-implicit-fallthrough',
+                '-Wno-padded',
+                '-Wno-reserved-id-macro',
+                '-Wno-sign-conversion',
+                '-Wno-switch-enum',
+            ],
+            'gcc': [
+                '-Wno-cast-align',
+                '-Wno-cast-qual',
+                '-Wno-float-conversion',
+                '-Wno-inline',
+                '-Wno-padded',
+                '-Wno-sign-conversion',
+                '-Wno-suggest-attribute=const',
+                '-Wno-suggest-attribute=pure',
+                '-Wno-switch-enum',
+            ],
+            'msvc': [
+                '/wd4061',  # enumerator in switch is not explicitly handled
+                '/wd4365',  # signed/unsigned mismatch
+                '/wd4514',  # unreferenced inline function has been removed
+                '/wd4820',  # padding added after construct
+                '/wd4996',  # POSIX name for this item is deprecated
+            ],
+        })
+
+        autowaf.add_compiler_flags(conf.env, 'c', {
+            'clang': [
+                '-Wno-bad-function-cast',
+            ],
+            'gcc': [
+                '-Wno-bad-function-cast',
+            ],
+            'msvc': [
+                '/wd4706',  # assignment within conditional expression
+                '/wd5045',  # will insert Spectre mitigation for memory load
+            ],
+        })
+
     conf.env.update({
-        'BUILD_UTILS':  not Options.options.no_utils,
+        'BUILD_UTILS': not Options.options.no_utils,
         'BUILD_SHARED': not Options.options.no_shared,
         'STATIC_PROGS': Options.options.static_progs,
-        'BUILD_STATIC': Options.options.static or Options.options.static_progs})
+        'BUILD_STATIC': (Options.options.static or
+                         Options.options.static_progs)})
 
     if not conf.env.BUILD_SHARED and not conf.env.BUILD_STATIC:
         conf.fatal('Neither a shared nor a static build requested')
@@ -59,11 +115,15 @@ def configure(conf):
         conf.env.append_unique('DEFINES', ['_FILE_OFFSET_BITS=64'])
 
     if not Options.options.no_posix:
-        for name, header in {'posix_memalign': 'stdlib.h',
-                             'posix_fadvise':  'fcntl.h',
-                             'fileno':         'stdio.h'}.items():
+        funcs = {'posix_memalign': ('stdlib.h', 'int', 'void**,size_t,size_t'),
+                 'posix_fadvise':  ('fcntl.h', 'int', 'int,off_t,off_t,int'),
+                 'fileno':         ('stdio.h', 'int', 'FILE*')}
+
+        for name, (header, ret, args) in funcs.items():
             conf.check_function('c', name,
                                 header_name = header,
+                                return_type = ret,
+                                arg_types   = args,
                                 define_name = 'HAVE_' + name.upper(),
                                 defines     = ['_POSIX_C_SOURCE=200809L'],
                                 mandatory   = False)
@@ -78,6 +138,7 @@ def configure(conf):
          'Build utilities':      bool(conf.env['BUILD_UTILS']),
          'Build unit tests':     bool(conf.env['BUILD_TESTS'])})
 
+
 lib_headers = ['src/reader.h']
 
 lib_source = ['src/byte_source.c',
@@ -89,6 +150,7 @@ lib_source = ['src/byte_source.c',
               'src/uri.c',
               'src/writer.c']
 
+
 def build(bld):
     # C Headers
     includedir = '${INCLUDEDIR}/serd-%s/serd' % SERD_MAJOR_VERSION
@@ -96,7 +158,7 @@ def build(bld):
 
     # Pkgconfig file
     autowaf.build_pc(bld, 'SERD', SERD_VERSION, SERD_MAJOR_VERSION, [],
-                     {'SERD_MAJOR_VERSION' : SERD_MAJOR_VERSION})
+                     {'SERD_MAJOR_VERSION': SERD_MAJOR_VERSION})
 
     defines = []
     lib_args = {'export_includes': ['.'],
@@ -129,9 +191,10 @@ def build(bld):
             **lib_args)
 
     if bld.env.BUILD_TESTS:
+        coverage_flags = [''] if bld.env.NO_COVERAGE else ['--coverage']
         test_args = {'includes':     ['.', './src'],
-                     'cflags':       [''] if bld.env.NO_COVERAGE else ['--coverage'],
-                     'linkflags':    [''] if bld.env.NO_COVERAGE else ['--coverage'],
+                     'cflags':       coverage_flags,
+                     'linkflags':    coverage_flags,
                      'lib':          lib_args['lib'],
                      'install_path': ''}
 
@@ -183,19 +246,54 @@ def build(bld):
 
     bld.add_post_fun(autowaf.run_ldconfig)
 
+
+class LintContext(Build.BuildContext):
+    fun = cmd = 'lint'
+
+
 def lint(ctx):
     "checks code for style issues"
     import subprocess
-    cmd = ("clang-tidy -p=. -header-filter=.* -checks=\"*," +
-           "-bugprone-suspicious-string-compare," +
-           "-clang-analyzer-alpha.*," +
-           "-google-readability-todo," +
-           "-hicpp-signed-bitwise," +
-           "-llvm-header-guard," +
-           "-misc-unused-parameters," +
-           "-readability-else-after-return\" " +
-           "../src/*.c")
-    subprocess.call(cmd, cwd='build', shell=True)
+
+    st = 0
+
+    if "FLAKE8" in ctx.env:
+        Logs.info("Running flake8")
+        st = subprocess.call([ctx.env.FLAKE8[0],
+                              "wscript",
+                              "--ignore",
+                              "E101,E129,W191,E221,W504,E251,E241,E741"])
+    else:
+        Logs.warn("Not running flake8")
+
+    if "IWYU_TOOL" in ctx.env:
+        Logs.info("Running include-what-you-use")
+        cmd = [ctx.env.IWYU_TOOL[0], "-o", "clang", "-p", "build"]
+        output = subprocess.check_output(cmd).decode('utf-8')
+        if 'error: ' in output:
+            sys.stdout.write(output)
+            st += 1
+    else:
+        Logs.warn("Not running include-what-you-use")
+
+    if "CLANG_TIDY" in ctx.env and "clang" in ctx.env.CC[0]:
+        Logs.info("Running clang-tidy")
+        sources = glob.glob('src/*.c') + glob.glob('tests/*.c')
+        sources = list(map(os.path.abspath, sources))
+        procs = []
+        for source in sources:
+            cmd = [ctx.env.CLANG_TIDY[0], "--quiet", "-p=.", source]
+            procs += [subprocess.Popen(cmd, cwd="build")]
+
+        for proc in procs:
+            stdout, stderr = proc.communicate()
+            st += proc.returncode
+    else:
+        Logs.warn("Not running clang-tidy")
+
+    if st != 0:
+        sys.exit(st)
+
 
 def amalgamate(ctx):
     "builds single-file amalgamated source"
@@ -214,13 +312,13 @@ def amalgamate(ctx):
                     if header:
                         if l == '*/\n':
                             header = False
-                    else:
-                        if (not l.startswith('#include "') and
-                            l != '#include "serd.h"\n'):
-                            amalgamation.write(l)
+                    elif (not l.startswith('#include "') and
+                          l != '#include "serd.h"\n'):
+                        amalgamation.write(l)
 
     for i in ['c', 'h']:
         Logs.info('Wrote build/serd.%s' % i)
+
 
 def earl_assertion(test, passed, asserter):
     import datetime
@@ -244,7 +342,9 @@ def earl_assertion(test, passed, asserter):
        'earl:passed' if passed else 'earl:failed',
        datetime.datetime.now().replace(microsecond=0).isoformat())
 
+
 serdi = './serdi_static'
+
 
 def test_thru(check, base, path, check_path, flags, isyntax, osyntax, opts=[]):
     out_path = path + '.pass'
@@ -266,15 +366,17 @@ def test_thru(check, base, path, check_path, flags, isyntax, osyntax, opts=[]):
             check(thru_cmd, stdout=thru_path, verbosity=0, name=thru_path) and
             check.file_equals(check_path, thru_path, verbosity=0))
 
+
 def file_uri_to_path(uri):
     try:
-        from urlparse import urlparse # Python 2
-    except:
-        from urllib.parse import urlparse # Python 3
+        from urlparse import urlparse  # Python 2
+    except ImportError:
+        from urllib.parse import urlparse  # Python 3
 
     path  = urlparse(uri).path
     drive = os.path.splitdrive(path[1:])[0]
     return path if not drive else path[1:]
+
 
 def _test_output_syntax(test_class):
     if 'NTriples' in test_class or 'Turtle' in test_class:
@@ -282,6 +384,7 @@ def _test_output_syntax(test_class):
     elif 'NQuads' in test_class or 'Trig' in test_class:
         return 'NQuads'
     raise Exception('Unknown test class <%s>' % test_class)
+
 
 def _load_rdf(filename):
     "Load an RDF file into python dictionaries via serdi.  Only supports URIs."
@@ -299,7 +402,8 @@ def _load_rdf(filename):
 
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE)
     for line in proc.communicate()[0].splitlines():
-        matches = re.match('<([^ ]*)> <([^ ]*)> <([^ ]*)> \.', line.decode('utf-8'))
+        matches = re.match(r'<([^ ]*)> <([^ ]*)> <([^ ]*)> \.',
+                           line.decode('utf-8'))
         if matches:
             s, p, o = (matches.group(1), matches.group(2), matches.group(3))
             if s not in model:
@@ -316,6 +420,7 @@ def _load_rdf(filename):
                     instances[o].update([s])
 
     return model, instances
+
 
 def test_suite(ctx, base_uri, testdir, report, isyntax, options=[]):
     import itertools
@@ -342,14 +447,17 @@ def test_suite(ctx, base_uri, testdir, report, isyntax, options=[]):
         with ctx.group(tests_name) as check:
             for test in sorted(tests):
                 action_node = model[test][mf + 'action'][0]
-                action      = os.path.join('tests', testdir, os.path.basename(action_node))
+                basename    = os.path.basename(action_node)
+                action      = os.path.join('tests', testdir, basename)
                 rel_action  = os.path.join(os.path.relpath(srcdir), action)
                 uri         = base_uri + os.path.basename(action)
                 command     = [serdi] + options + ['-f', rel_action, uri]
 
                 # Run strict test
                 if expected_return == 0:
-                    result = check(command, stdout=action + '.out', name=action)
+                    result = check(command,
+                                   stdout=action + '.out',
+                                   name=action)
                 else:
                     result = check(command,
                                    stdout=action + '.out',
@@ -377,8 +485,10 @@ def test_suite(ctx, base_uri, testdir, report, isyntax, options=[]):
     ns_rdftest = 'http://www.w3.org/ns/rdftest#'
     for test_class, instances in instances.items():
         if test_class.startswith(ns_rdftest):
-            expected = 1 if '-l' not in options and 'Negative' in test_class else 0
+            expected = (1 if '-l' not in options and 'Negative' in test_class
+                        else 0)
             run_tests(test_class, instances, expected)
+
 
 def test(tst):
     import tempfile
@@ -391,7 +501,7 @@ def test(tst):
             os.makedirs(test_dir)
             for i in glob.glob(test_dir + '/*.*'):
                 os.remove(i)
-        except:
+        except Exception:
             pass
 
     srcdir = tst.path.abspath()
@@ -422,7 +532,9 @@ def test(tst):
         with tempfile.TemporaryFile(mode='r') as stdin:
             check([serdi, '-'], stdin=stdin)
 
-    with tst.group('BadCommands', expected=1, stderr=autowaf.NONEMPTY) as check:
+    with tst.group('BadCommands',
+                   expected=1,
+                   stderr=autowaf.NONEMPTY) as check:
         check([serdi])
         check([serdi, '/no/such/file'])
         check([serdi, 'ftp://example.org/unsupported.ttl'])
@@ -447,7 +559,6 @@ def test(tst):
     if sys.version_info.major >= 3:
         from waflib.extras import autoship
         try:
-            import rdflib
             with tst.group('NEWS') as check:
                 news_path = os.path.join(srcdir, 'NEWS')
                 entries = autoship.read_news(top=srcdir)

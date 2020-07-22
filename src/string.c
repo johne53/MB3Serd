@@ -1,5 +1,5 @@
 /*
-  Copyright 2011-2016 David Robillard <http://drobilla.net>
+  Copyright 2011-2020 David Robillard <http://drobilla.net>
 
   Permission to use, copy, modify, and/or distribute this software for any
   purpose with or without fee is hereby granted, provided that the above
@@ -16,7 +16,11 @@
 
 #include "serd_internal.h"
 
+#include "serd/serd.h"
+
 #include <math.h>
+#include <stdint.h>
+#include <stdlib.h>
 
 void
 serd_free(void* ptr)
@@ -37,6 +41,7 @@ serd_strerror(SerdStatus status)
 	case SERD_ERR_ID_CLASH:   return (const uint8_t*)"Blank node ID clash";
 	case SERD_ERR_BAD_CURIE:  return (const uint8_t*)"Invalid CURIE";
 	case SERD_ERR_INTERNAL:   return (const uint8_t*)"Internal error";
+	default:                  break;
 	}
 	return (const uint8_t*)"Unknown error";  // never reached
 }
@@ -50,6 +55,8 @@ serd_update_flags(const uint8_t c, SerdNodeFlags* const flags)
 		break;
 	case '"':
 		*flags |= SERD_HAS_QUOTE;
+	default:
+		break;
 	}
 }
 

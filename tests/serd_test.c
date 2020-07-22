@@ -1,5 +1,5 @@
 /*
-  Copyright 2011-2017 David Robillard <http://drobilla.net>
+  Copyright 2011-2020 David Robillard <http://drobilla.net>
 
   Permission to use, copy, modify, and/or distribute this software for any
   purpose with or without fee is hereby granted, provided that the above
@@ -16,15 +16,16 @@
 
 #undef NDEBUG
 
+#include "serd/serd.h"
+
 #include <assert.h>
 #include <float.h>
 #include <math.h>
-#include <stdarg.h>
+#include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-#include "serd/serd.h"
 
 #define USTR(s) ((const uint8_t*)(s))
 
@@ -210,7 +211,7 @@ test_double_to_node(void)
 	for (unsigned i = 0; i < sizeof(dbl_test_nums) / sizeof(double); ++i) {
 		SerdNode   node = serd_node_new_decimal(dbl_test_nums[i], 8);
 		const bool pass = (node.buf && dbl_test_strs[i])
-			? !strcmp((const char*)node.buf, (const char*)dbl_test_strs[i])
+			? !strcmp((const char*)node.buf, dbl_test_strs[i])
 			: ((const char*)node.buf == dbl_test_strs[i]);
 		assert(pass);
 		const size_t len = node.buf ? strlen((const char*)node.buf) : 0;
@@ -243,7 +244,7 @@ static void
 test_blob_to_node(void)
 {
 	for (size_t size = 0; size < 256; ++size) {
-		uint8_t* data = (uint8_t*)malloc(size);
+		uint8_t* data = size > 0 ? (uint8_t*)malloc(size) : NULL;
 		for (size_t i = 0; i < size; ++i) {
 			data[i] = (uint8_t)(rand() % 256);
 		}
@@ -253,7 +254,7 @@ test_blob_to_node(void)
 		assert(blob.n_bytes == blob.n_chars);
 		assert(blob.n_bytes == strlen((const char*)blob.buf));
 
-		size_t   out_size;
+		size_t   out_size = 0;
 		uint8_t* out = (uint8_t*)serd_base64_decode(
 			blob.buf, blob.n_bytes, &out_size);
 		assert(out_size == size);
@@ -273,9 +274,9 @@ test_strlen(void)
 {
 	const uint8_t str[] = { '"', '5', 0xE2, 0x82, 0xAC, '"', '\n', 0 };
 
-	size_t        n_bytes;
-	SerdNodeFlags flags;
-	size_t        len = serd_strlen(str, &n_bytes, &flags);
+	size_t        n_bytes = 0;
+	SerdNodeFlags flags   = 0;
+	size_t        len     = serd_strlen(str, &n_bytes, &flags);
 	assert(len == 5 && n_bytes == 7 &&
 	       flags == (SERD_HAS_QUOTE | SERD_HAS_NEWLINE));
 	len = serd_strlen(str, NULL, &flags);
@@ -287,13 +288,12 @@ test_strlen(void)
 static void
 test_strerror(void)
 {
-	const uint8_t* msg = NULL;
-	assert(!strcmp((const char*)(msg = serd_strerror(SERD_SUCCESS)), "Success"));
+	assert(!strcmp((const char*)(serd_strerror(SERD_SUCCESS)), "Success"));
 	for (int i = SERD_FAILURE; i <= SERD_ERR_INTERNAL; ++i) {
-		msg = serd_strerror((SerdStatus)i);
+		const uint8_t* const msg = serd_strerror((SerdStatus)i);
 		assert(strcmp((const char*)msg, "Success"));
 	}
-	msg = serd_strerror((SerdStatus)-1);
+	serd_strerror((SerdStatus)-1);
 }
 
 static void
@@ -462,7 +462,8 @@ test_env(void)
 	assert(serd_env_set_base_uri(env, &SERD_NODE_NULL));
 	assert(serd_node_equals(serd_env_get_base_uri(env, NULL), &SERD_NODE_NULL));
 
-	SerdChunk prefix, suffix;
+	SerdChunk prefix;
+	SerdChunk suffix;
 	assert(serd_env_expand(env, &b, &prefix, &suffix));
 
 	SerdNode xnode = serd_env_expand_node(env, &SERD_NODE_NULL);

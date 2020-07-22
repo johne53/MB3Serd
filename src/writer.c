@@ -1,5 +1,5 @@
 /*
-  Copyright 2011-2017 David Robillard <http://drobilla.net>
+  Copyright 2011-2020 David Robillard <http://drobilla.net>
 
   Permission to use, copy, modify, and/or distribute this software for any
   purpose with or without fee is hereby granted, provided that the above
@@ -16,7 +16,12 @@
 
 #include "serd_internal.h"
 
+#include "serd/serd.h"
+
 #include <assert.h>
+#include <stdarg.h>
+#include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -254,6 +259,8 @@ lname_must_escape(const uint8_t c)
 	case '(': case ')': case '*': case '+': case ',': case '/':
 	case ';': case '=': case '?': case '@': case '~':
 		return true;
+	default:
+		break;
 	}
 	return false;
 }
@@ -333,6 +340,7 @@ write_text(SerdWriter* writer, TextContext ctx,
 				switch (in) {
 				case '\b': len += sink("\\b", 2, writer); continue;
 				case '\f': len += sink("\\f", 2, writer); continue;
+				default: break;
 				}
 			}
 		}
@@ -507,7 +515,9 @@ write_uri_node(SerdWriter* const        writer,
 
 	write_sep(writer, SEP_URI_BEGIN);
 	if (writer->style & SERD_STYLE_RESOLVED) {
-		SerdURI in_base_uri, uri, abs_uri;
+		SerdURI in_base_uri;
+		SerdURI uri;
+		SerdURI abs_uri;
 		serd_env_get_base_uri(writer->env, &in_base_uri);
 		serd_uri_parse(node->buf, &uri);
 		serd_uri_resolve(&uri, &in_base_uri, &abs_uri);
@@ -538,9 +548,10 @@ write_curie(SerdWriter* const        writer,
             const Field              field,
             const SerdStatementFlags flags)
 {
-	SerdChunk  prefix;
-	SerdChunk  suffix;
-	SerdStatus st;
+	SerdChunk  prefix = {NULL, 0};
+	SerdChunk  suffix = {NULL, 0};
+	SerdStatus st     = SERD_SUCCESS;
+
 	switch (writer->syntax) {
 	case SERD_NTRIPLES:
 	case SERD_NQUADS:
@@ -686,9 +697,11 @@ serd_writer_write_statement(SerdWriter*        writer,
 	}
 
 #define TRY(write_result) \
-	if (!(write_result)) { \
-		return SERD_ERR_UNKNOWN; \
-	}
+	do { \
+		if (!(write_result)) { \
+			return SERD_ERR_UNKNOWN; \
+		} \
+	} while (0)
 
 	switch (writer->syntax) {
 	case SERD_NTRIPLES:

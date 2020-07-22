@@ -1,5 +1,5 @@
 /*
-  Copyright 2011-2016 David Robillard <http://drobilla.net>
+  Copyright 2011-2020 David Robillard <http://drobilla.net>
 
   Permission to use, copy, modify, and/or distribute this software for any
   purpose with or without fee is hereby granted, provided that the above
@@ -16,8 +16,14 @@
 
 #include "serd_internal.h"
 
+#include "serd/serd.h"
+
+#include <assert.h>
 #include <float.h>
 #include <math.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -93,11 +99,11 @@ serd_uri_string_length(const SerdURI* uri)
 #define ADD_LEN(field, n_delims) \
 	if ((field).len) { len += (field).len + (n_delims); }
 
-	ADD_LEN(uri->path,      1);  // + possible leading `/'
-	ADD_LEN(uri->scheme,    1);  // + trailing `:'
-	ADD_LEN(uri->authority, 2);  // + leading `//'
-	ADD_LEN(uri->query,     1);  // + leading `?'
-	ADD_LEN(uri->fragment,  1);  // + leading `#'
+	ADD_LEN(uri->path,      1)  // + possible leading `/'
+	ADD_LEN(uri->scheme,    1)  // + trailing `:'
+	ADD_LEN(uri->authority, 2)  // + leading `//'
+	ADD_LEN(uri->query,     1)  // + leading `?'
+	ADD_LEN(uri->fragment,  1)  // + leading `#'
 
 	return len + 2;  // + 2 for authority `//'
 }
@@ -185,7 +191,10 @@ serd_node_new_file_uri(const uint8_t* path,
 			serd_chunk_sink(path + i, 1, &chunk);
 		} else {
 			char escape_str[4] = { '%', 0, 0, 0 };
-			snprintf(escape_str + 1, sizeof(escape_str) - 1, "%X", path[i]);
+			snprintf(escape_str + 1,
+			         sizeof(escape_str) - 1,
+			         "%X",
+			         (unsigned)path[i]);
 			serd_chunk_sink(escape_str, 3, &chunk);
 		}
 	}
