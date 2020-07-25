@@ -21,7 +21,7 @@
 #include <assert.h>
 #include <float.h>
 #include <math.h>
-#if (!defined (_MSC_VER) || (_MSC_VER >= 1900)) // Test added by JE - 10-01-2019
+#if (!defined (_MSC_VER) || (_MSC_VER >= 1900)) // Test added by JE - 22-07-2020
 #include <stdbool.h>
 #endif
 #include <stdint.h>
