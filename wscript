@@ -63,7 +63,6 @@ def configure(conf):
                 '-Wno-padded',
                 '-Wno-reserved-id-macro',
                 '-Wno-sign-conversion',
-                '-Wno-switch-enum',
             ],
             'gcc': [
                 '-Wno-cast-align',
@@ -74,12 +73,13 @@ def configure(conf):
                 '-Wno-sign-conversion',
                 '-Wno-suggest-attribute=const',
                 '-Wno-suggest-attribute=pure',
-                '-Wno-switch-enum',
             ],
             'msvc': [
                 '/wd4061',  # enumerator in switch is not explicitly handled
                 '/wd4365',  # signed/unsigned mismatch
                 '/wd4514',  # unreferenced inline function has been removed
+                '/wd4710',  # function not inlined
+                '/wd4711',  # function selected for automatic inline expansion
                 '/wd4820',  # padding added after construct
                 '/wd4996',  # POSIX name for this item is deprecated
             ],
@@ -91,6 +91,7 @@ def configure(conf):
             ],
             'gcc': [
                 '-Wno-bad-function-cast',
+                '-Wno-suggest-attribute=malloc'
             ],
             'msvc': [
                 '/wd4706',  # assignment within conditional expression
@@ -141,12 +142,14 @@ def configure(conf):
 
 lib_headers = ['src/reader.h']
 
-lib_source = ['src/byte_source.c',
+lib_source = ['src/base64.c',
+              'src/byte_source.c',
               'src/env.c',
               'src/n3.c',
               'src/node.c',
               'src/reader.c',
               'src/string.c',
+              'src/system.c',
               'src/uri.c',
               'src/writer.c']
 
@@ -208,6 +211,9 @@ def build(bld):
 
         # Test programs
         for prog in [('serdi_static', 'src/serdi.c'),
+                     ('env_test', 'tests/env_test.c'),
+                     ('free_null_test', 'tests/free_null_test.c'),
+                     ('read_chunk_test', 'tests/read_chunk_test.c'),
                      ('serd_test', 'tests/serd_test.c')]:
             bld(features     = 'c cprogram',
                 source       = prog[1],
@@ -298,22 +304,35 @@ def lint(ctx):
 def amalgamate(ctx):
     "builds single-file amalgamated source"
     import shutil
+    import re
     shutil.copy('serd/serd.h', 'build/serd.h')
+
+    def include_line(line):
+        return (not re.match(r'#include "[^/]*\.h"', line) and
+                not re.match('#include "serd/serd.h"', line))
+
     with open('build/serd.c', 'w') as amalgamation:
-        with open('src/serd_internal.h') as serd_internal_h:
-            for l in serd_internal_h:
-                amalgamation.write(l.replace('serd/serd.h', 'serd.h'))
+        amalgamation.write('/* This is amalgamated code, do not edit! */\n')
+        amalgamation.write('#include "serd.h"\n\n')
+
+        for header_path in ['src/serd_internal.h',
+                            'src/system.h',
+                            'src/byte_sink.h',
+                            'src/byte_source.h',
+                            'src/stack.h',
+                            'src/string_utils.h',
+                            'src/uri_utils.h',
+                            'src/reader.h']:
+            with open(header_path) as header:
+                for l in header:
+                    if include_line(l):
+                        amalgamation.write(l)
 
         for f in lib_headers + lib_source:
             with open(f) as fd:
                 amalgamation.write('\n/**\n   @file %s\n*/' % f)
-                header = True
                 for l in fd:
-                    if header:
-                        if l == '*/\n':
-                            header = False
-                    elif (not l.startswith('#include "') and
-                          l != '#include "serd.h"\n'):
+                    if include_line(l):
                         amalgamation.write(l)
 
     for i in ['c', 'h']:
@@ -386,6 +405,14 @@ def _test_output_syntax(test_class):
     raise Exception('Unknown test class <%s>' % test_class)
 
 
+def _wrapped_command(cmd):
+    if Options.options.test_wrapper:
+        import shlex
+        return shlex.split(Options.options.test_wrapper) + cmd
+
+    return cmd
+
+
 def _load_rdf(filename):
     "Load an RDF file into python dictionaries via serdi.  Only supports URIs."
     import subprocess
@@ -395,11 +422,7 @@ def _load_rdf(filename):
     model = {}
     instances = {}
 
-    cmd = ['./serdi_static', filename]
-    if Options.options.test_wrapper:
-        import shlex
-        cmd = shlex.split(Options.options.test_wrapper) + cmd
-
+    cmd = _wrapped_command(['./serdi_static', filename])
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE)
     for line in proc.communicate()[0].splitlines():
         matches = re.match(r'<([^ ]*)> <([^ ]*)> <([^ ]*)> \.',
@@ -422,9 +445,18 @@ def _load_rdf(filename):
     return model, instances
 
 
-def test_suite(ctx, base_uri, testdir, report, isyntax, options=[]):
+def _option_combinations(options):
+    "Return an iterator that cycles through all combinations of options"
     import itertools
 
+    combinations = []
+    for n in range(len(options) + 1):
+        combinations += list(itertools.combinations(options, n))
+
+    return itertools.cycle(combinations)
+
+
+def test_suite(ctx, base_uri, testdir, report, isyntax, options=[]):
     srcdir = ctx.path.abspath()
 
     mf = 'http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#'
@@ -436,13 +468,9 @@ def test_suite(ctx, base_uri, testdir, report, isyntax, options=[]):
         asserter = 'http://drobilla.net/drobilla#me'
 
     def run_tests(test_class, tests, expected_return):
-        thru_flags   = [['-e'], ['-f'], ['-b'], ['-r', 'http://example.org/']]
-        thru_options = []
-        for n in range(len(thru_flags) + 1):
-            thru_options += list(itertools.combinations(thru_flags, n))
-        thru_options_iter = itertools.cycle(thru_options)
-
+        thru_flags = [['-e'], ['-f'], ['-b'], ['-r', 'http://example.org/']]
         osyntax = _test_output_syntax(test_class)
+        thru_options_iter = _option_combinations(thru_flags)
         tests_name = '%s.%s' % (testdir, test_class[test_class.find('#') + 1:])
         with ctx.group(tests_name) as check:
             for test in sorted(tests):
@@ -507,6 +535,9 @@ def test(tst):
     srcdir = tst.path.abspath()
 
     with tst.group('Unit') as check:
+        check(['./env_test'])
+        check(['./free_null_test'])
+        check(['./read_chunk_test'])
         check(['./serd_test'])
 
     def test_syntax_io(check, in_name, check_name, lang):

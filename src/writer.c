@@ -14,7 +14,11 @@
   OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 */
 
+#include "byte_sink.h"
 #include "serd_internal.h"
+#include "stack.h"
+#include "string_utils.h"
+#include "uri_utils.h"
 
 #include "serd/serd.h"
 
@@ -27,6 +31,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+typedef enum {
+	FIELD_NONE,
+	FIELD_SUBJECT,
+	FIELD_PREDICATE,
+	FIELD_OBJECT,
+	FIELD_GRAPH
+} Field;
 
 typedef struct {
 	SerdNode graph;
@@ -76,7 +88,7 @@ static const SepRule rules[] = {
 	{ "[",      1, 0, 1, 1 },
 	{ "]",      1, 1, 0, 0 },
 	{ "(",      1, 0, 0, 0 },
-	{ NULL,     1, 0, 1, 0 },
+	{ NULL,     0, 0, 1, 0 },
 	{ ")",      1, 1, 0, 0 },
 	{ " {",     2, 0, 1, 1 },
 	{ " }",     2, 0, 1, 1 },
@@ -632,6 +644,8 @@ write_node(SerdWriter*        writer,
 {
 	bool ret = false;
 	switch (node->type) {
+	case SERD_NOTHING:
+		break;
 	case SERD_LITERAL:
 		ret = write_literal(writer, node, datatype, lang, flags);
 		break;
@@ -643,7 +657,7 @@ write_node(SerdWriter*        writer,
 		break;
 	case SERD_BLANK:
 		ret = write_blank(writer, node, field, flags);
-	default: break;
+		break;
 	}
 	writer->last_sep = SEP_NONE;
 	return ret;
@@ -705,9 +719,7 @@ serd_writer_write_statement(SerdWriter*        writer,
 		} \
 	} while (0)
 
-	switch (writer->syntax) {
-	case SERD_NTRIPLES:
-	case SERD_NQUADS:
+	if (writer->syntax == SERD_NTRIPLES || writer->syntax == SERD_NQUADS) {
 		TRY(write_node(writer, subject, NULL, NULL, FIELD_SUBJECT, flags));
 		sink(" ", 1, writer);
 		TRY(write_node(writer, predicate, NULL, NULL, FIELD_PREDICATE, flags));
@@ -719,8 +731,6 @@ serd_writer_write_statement(SerdWriter*        writer,
 		}
 		sink(" .\n", 3, writer);
 		return SERD_SUCCESS;
-	default:
-		break;
 	}
 
 	if ((graph && !serd_node_equals(graph, &writer->context.graph)) ||
@@ -970,6 +980,10 @@ serd_writer_set_prefix(SerdWriter*     writer,
 void
 serd_writer_free(SerdWriter* writer)
 {
+	if (!writer) {
+		return;
+	}
+
 	serd_writer_finish(writer);
 	serd_stack_free(&writer->anon_stack);
 	free(writer->bprefix);

@@ -14,8 +14,10 @@
   OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 */
 
+#define _POSIX_C_SOURCE 200809L /* for fileno and posix_fadvise */
+
 #include "serd_config.h"
-#include "serd_internal.h"
+#include "string_utils.h"
 
 #include "serd/serd.h"
 
@@ -24,6 +26,11 @@
 #include <io.h>
 #endif
 
+#if defined(HAVE_POSIX_FADVISE) && defined(HAVE_FILENO)
+#include <fcntl.h>
+#endif
+
+#include <errno.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -123,6 +130,22 @@ quiet_error_sink(void* handle, const SerdError* e)
 	return SERD_SUCCESS;
 }
 
+static inline FILE*
+serd_fopen(const char* path, const char* mode)
+{
+	FILE* fd = fopen(path, mode);
+	if (!fd) {
+		SERDI_ERRORF("failed to open file %s (%s)\n", path, strerror(errno));
+		return NULL;
+	}
+
+#if defined(HAVE_POSIX_FADVISE) && defined(HAVE_FILENO)
+	posix_fadvise(fileno(fd), 0, 0, POSIX_FADV_SEQUENTIAL|POSIX_FADV_NOREUSE);
+#endif
+
+	return fd;
+}
+
 int
 main(int argc, char** argv)
 {
@@ -210,8 +233,8 @@ main(int argc, char** argv)
 	}
 
 #ifdef _WIN32
-	_setmode(fileno(stdin), _O_BINARY);
-	_setmode(fileno(stdout), _O_BINARY);
+	_setmode(_fileno(stdin), _O_BINARY);
+	_setmode(_fileno(stdout), _O_BINARY);
 #endif
 
 	const uint8_t* input = (const uint8_t*)argv[a++];
@@ -290,15 +313,15 @@ main(int argc, char** argv)
 	serd_writer_chop_blank_prefix(writer, chop_prefix);
 	serd_reader_add_blank_prefix(reader, add_prefix);
 
-	SerdStatus status = SERD_SUCCESS;
+	SerdStatus st = SERD_SUCCESS;
 	if (!from_file) {
-		status = serd_reader_read_string(reader, input);
+		st = serd_reader_read_string(reader, input);
 	} else if (bulk_read) {
-		status = serd_reader_read_file_handle(reader, in_fd, in_name);
+		st = serd_reader_read_file_handle(reader, in_fd, in_name);
 	} else {
-		status = serd_reader_start_stream(reader, in_fd, in_name, false);
-		while (!status) {
-			status = serd_reader_read_chunk(reader);
+		st = serd_reader_start_stream(reader, in_fd, in_name, false);
+		while (!st) {
+			st = serd_reader_read_chunk(reader);
 		}
 		serd_reader_end_stream(reader);
 	}
@@ -315,8 +338,8 @@ main(int argc, char** argv)
 
 	if (fclose(out_fd)) {
 		perror("serdi: write error");
-		status = SERD_ERR_UNKNOWN;
+		st = SERD_ERR_UNKNOWN;
 	}
 
-	return (status > SERD_FAILURE) ? 1 : 0;
+	return (st > SERD_FAILURE) ? 1 : 0;
 }

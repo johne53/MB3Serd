@@ -48,6 +48,10 @@
 
 #ifdef __cplusplus
 extern "C" {
+#    if defined(__GNUC__)
+#        pragma GCC diagnostic push
+#        pragma GCC diagnostic ignored "-Wzero-as-null-pointer-constant"
+#    endif
 #endif
 
 /**
@@ -477,22 +481,6 @@ SerdNode
 serd_node_from_substring(SerdType type, const uint8_t* str, size_t len);
 
 /**
-   Make a deep copy of `node`.
-
-   @return a node that the caller must free with serd_node_free().
-*/
-SERD_API
-SerdNode
-serd_node_copy(const SerdNode* node);
-
-/**
-   Return true iff `a` is equal to `b`.
-*/
-SERD_API
-bool
-serd_node_equals(const SerdNode* a, const SerdNode* b);
-
-/**
    Simple wrapper for serd_node_new_uri() to resolve a URI node.
 */
 SERD_API
@@ -598,6 +586,22 @@ serd_node_new_integer(int64_t i);
 SERD_API
 SerdNode
 serd_node_new_blob(const void* buf, size_t size, bool wrap_lines);
+
+/**
+   Make a deep copy of `node`.
+
+   @return a node that the caller must free with serd_node_free().
+*/
+SERD_API
+SerdNode
+serd_node_copy(const SerdNode* node);
+
+/**
+   Return true iff `a` is equal to `b`.
+*/
+SERD_API
+bool
+serd_node_equals(const SerdNode* a, const SerdNode* b);
 
 /**
    Free any data owned by `node`.
@@ -1087,6 +1091,9 @@ serd_writer_finish(SerdWriter* writer);
 */
 
 #ifdef __cplusplus
+#    if defined(__GNUC__)
+#        pragma GCC diagnostic pop
+#    endif
 }  /* extern "C" */
 #endif
 

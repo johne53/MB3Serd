@@ -49,16 +49,6 @@ test_strtod(double dbl, double max_delta)
 	assert(diff <= max_delta);
 }
 
-static SerdStatus
-count_prefixes(void* handle, const SerdNode* name, const SerdNode* uri)
-{
-	(void)name;
-	(void)uri;
-
-	++*(int*)handle;
-	return SERD_SUCCESS;
-}
-
 typedef struct {
 	int             n_statements;
 	const SerdNode* graph;
@@ -85,6 +75,33 @@ test_sink(void*              handle,
 	++rt->n_statements;
 	rt->graph = graph;
 	return SERD_SUCCESS;
+}
+
+/// Returns EOF after a statement, then succeeds again (like a socket)
+static size_t
+eof_test_read(void* buf, size_t size, size_t nmemb, void* stream)
+{
+	assert(nmemb == 1);
+
+	static const char* const string = "_:s1 <http://example.org/p> _:o1 .\n"
+	                                  "_:s2 <http://example.org/p> _:o2 .\n";
+
+	size_t* count = (size_t*)stream;
+	if (*count == 34 || *count == 35 || *count + nmemb >= strlen(string)) {
+		++*count;
+		return 0;
+	}
+
+	memcpy((char*)buf, string + *count, size * nmemb);
+	*count += nmemb;
+	return nmemb;
+}
+
+static int
+eof_test_error(void* stream)
+{
+	(void)stream;
+	return 0;
 }
 
 static void
@@ -148,7 +165,7 @@ test_read_chunks(void)
 
 	// Read terminator
 	st = serd_reader_read_chunk(reader);
-	assert(st == SERD_SUCCESS); // FIXME: return SERD_FAILURE?
+	assert(st == SERD_FAILURE);
 	assert(rt->n_statements == 1);
 
 	// Read second statement (after null terminator)
@@ -158,12 +175,12 @@ test_read_chunks(void)
 
 	// Read terminator
 	st = serd_reader_read_chunk(reader);
-	assert(st == SERD_SUCCESS); // FIXME: return SERD_FAILURE?
+	assert(st == SERD_FAILURE);
 	assert(rt->n_statements == 2);
 
 	// EOF
 	st = serd_reader_read_chunk(reader);
-	assert(st == SERD_SUCCESS); // FIXME: return SERD_FAILURE?
+	assert(st == SERD_FAILURE);
 	assert(rt->n_statements == 2);
 
 	serd_reader_free(reader);
@@ -173,15 +190,6 @@ test_read_chunks(void)
 static void
 test_string_to_double(void)
 {
-#define MAX       1000000
-#define NUM_TESTS 1000
-	for (int i = 0; i < NUM_TESTS; ++i) {
-		double dbl = rand() % MAX;
-		dbl += (rand() % MAX) / (double)MAX;
-
-		test_strtod(dbl, 1 / (double)MAX);
-	}
-
 	const double expt_test_nums[] = {
 		2.0E18, -5e19, +8e20, 2e+24, -5e-5, 8e0, 9e-0, 2e+0
 	};
@@ -190,10 +198,12 @@ test_string_to_double(void)
 		"02e18", "-5e019", "+8e20", "2E+24", "-5E-5", "8E0", "9e-0", " 2e+0"
 	};
 
-	for (unsigned i = 0; i < sizeof(expt_test_nums) / sizeof(double); ++i) {
+	for (size_t i = 0; i < sizeof(expt_test_nums) / sizeof(double); ++i) {
 		const double num   = serd_strtod(expt_test_strs[i], NULL);
 		const double delta = fabs(num - expt_test_nums[i]);
 		assert(delta <= DBL_EPSILON);
+
+		test_strtod(expt_test_nums[i], DBL_EPSILON);
 	}
 }
 
@@ -208,7 +218,7 @@ test_double_to_node(void)
 		"0.0", "9.0", "10.0", "0.01", "2.05", "-16.00001", "5.00000001", "0.0", NULL, NULL
 	};
 
-	for (unsigned i = 0; i < sizeof(dbl_test_nums) / sizeof(double); ++i) {
+	for (size_t i = 0; i < sizeof(dbl_test_nums) / sizeof(double); ++i) {
 		SerdNode   node = serd_node_new_decimal(dbl_test_nums[i], 8);
 		const bool pass = (node.buf && dbl_test_strs[i])
 			? !strcmp((const char*)node.buf, dbl_test_strs[i])
@@ -231,7 +241,7 @@ test_integer_to_node(void)
 		"0", "0", "-23", "23", "-12340", "1000", "-1000"
 	};
 
-	for (unsigned i = 0; i < sizeof(int_test_nums) / sizeof(double); ++i) {
+	for (size_t i = 0; i < sizeof(int_test_nums) / sizeof(double); ++i) {
 		SerdNode node = serd_node_new_integer(int_test_nums[i]);
 		assert(!strcmp((const char*)node.buf, (const char*)int_test_strs[i]));
 		const size_t len = strlen((const char*)node.buf);
@@ -246,7 +256,7 @@ test_blob_to_node(void)
 	for (size_t size = 0; size < 256; ++size) {
 		uint8_t* data = size > 0 ? (uint8_t*)malloc(size) : NULL;
 		for (size_t i = 0; i < size; ++i) {
-			data[i] = (uint8_t)(rand() % 256);
+			data[i] = (uint8_t)((size + i) % 256);
 		}
 
 		SerdNode blob = serd_node_new_blob(data, size, size % 5);
@@ -288,12 +298,15 @@ test_strlen(void)
 static void
 test_strerror(void)
 {
-	assert(!strcmp((const char*)(serd_strerror(SERD_SUCCESS)), "Success"));
+	const uint8_t* msg = serd_strerror(SERD_SUCCESS);
+	assert(!strcmp((const char*)msg, "Success"));
 	for (int i = SERD_FAILURE; i <= SERD_ERR_INTERNAL; ++i) {
-		const uint8_t* const msg = serd_strerror((SerdStatus)i);
+		msg = serd_strerror((SerdStatus)i);
 		assert(strcmp((const char*)msg, "Success"));
 	}
-	serd_strerror((SerdStatus)-1);
+
+	msg = serd_strerror((SerdStatus)-1);
+	assert(!strcmp((const char*)msg, "Unknown error"));
 }
 
 static void
@@ -450,55 +463,6 @@ test_relative_uri(void)
 }
 
 static void
-test_env(void)
-{
-	SerdNode u   = serd_node_from_string(SERD_URI, USTR("http://example.org/foo"));
-	SerdNode b   = serd_node_from_string(SERD_CURIE, USTR("invalid"));
-	SerdNode c   = serd_node_from_string(SERD_CURIE, USTR("eg.2:b"));
-	SerdEnv* env = serd_env_new(NULL);
-	serd_env_set_prefix_from_strings(env, USTR("eg.2"), USTR("http://example.org/"));
-
-	assert(serd_env_set_base_uri(env, NULL));
-	assert(serd_env_set_base_uri(env, &SERD_NODE_NULL));
-	assert(serd_node_equals(serd_env_get_base_uri(env, NULL), &SERD_NODE_NULL));
-
-	SerdChunk prefix;
-	SerdChunk suffix;
-	assert(serd_env_expand(env, &b, &prefix, &suffix));
-
-	SerdNode xnode = serd_env_expand_node(env, &SERD_NODE_NULL);
-	assert(serd_node_equals(&xnode, &SERD_NODE_NULL));
-
-	SerdNode xu = serd_env_expand_node(env, &u);
-	assert(!strcmp((const char*)xu.buf, "http://example.org/foo"));
-	serd_node_free(&xu);
-
-	SerdNode badpre = serd_node_from_string(SERD_CURIE, USTR("hm:what"));
-	SerdNode xbadpre = serd_env_expand_node(env, &badpre);
-	assert(serd_node_equals(&xbadpre, &SERD_NODE_NULL));
-
-	SerdNode xc = serd_env_expand_node(env, &c);
-	assert(!strcmp((const char*)xc.buf, "http://example.org/b"));
-	serd_node_free(&xc);
-
-	assert(serd_env_set_prefix(env, &SERD_NODE_NULL, &SERD_NODE_NULL));
-
-	const SerdNode lit = serd_node_from_string(SERD_LITERAL, USTR("hello"));
-	assert(serd_env_set_prefix(env, &b, &lit));
-
-	int n_prefixes = 0;
-	serd_env_set_prefix_from_strings(env, USTR("eg.2"), USTR("http://example.org/"));
-	serd_env_foreach(env, count_prefixes, &n_prefixes);
-	assert(n_prefixes == 1);
-
-	SerdNode shorter_uri = serd_node_from_string(SERD_URI, USTR("urn:foo"));
-	SerdNode prefix_name;
-	assert(!serd_env_qualify(env, &shorter_uri, &prefix_name, &suffix));
-
-	serd_env_free(env);
-}
-
-static void
 test_writer(const char* const path)
 {
 	FILE* fd = fopen(path, "wb");
@@ -535,7 +499,7 @@ test_writer(const char* const path)
 	                              { &o, &p, &o, NULL, NULL },
 	                              { &s, &p, &SERD_NODE_NULL, NULL, NULL },
 	                              { NULL, NULL, NULL, NULL, NULL } };
-	for (unsigned i = 0; i < sizeof(junk) / (sizeof(SerdNode*) * 5); ++i) {
+	for (size_t i = 0; i < sizeof(junk) / (sizeof(SerdNode*) * 5); ++i) {
 		assert(serd_writer_write_statement(
 			       writer, 0, NULL,
 			       junk[i][0], junk[i][1], junk[i][2], junk[i][3], junk[i][4]));
@@ -553,7 +517,7 @@ test_writer(const char* const path)
 	                              { &s, &p, &o, NULL, &SERD_NODE_NULL },
 	                              { &s, &p, &o, &SERD_NODE_NULL, NULL },
 	                              { &s, &p, &o, &SERD_NODE_NULL, NULL } };
-	for (unsigned i = 0; i < sizeof(good) / (sizeof(SerdNode*) * 5); ++i) {
+	for (size_t i = 0; i < sizeof(good) / (sizeof(SerdNode*) * 5); ++i) {
 		assert(!serd_writer_write_statement(
 			       writer, 0, NULL,
 			       good[i][0], good[i][1], good[i][2], good[i][3], good[i][4]));
@@ -588,6 +552,23 @@ test_writer(const char* const path)
 
 	assert(!strcmp((const char*)out, "@base <http://example.org/base> .\n"));
 	serd_free(out);
+
+	// Test writing empty node
+	SerdNode    nothing = serd_node_from_string(SERD_NOTHING, USTR(""));
+	FILE* const empty   = tmpfile();
+
+	writer = serd_writer_new(
+		SERD_TURTLE, (SerdStyle)0, env, NULL, serd_file_sink, empty);
+
+	// FIXME: error handling
+	serd_writer_write_statement(writer, 0, NULL,
+	                            &s, &p, &nothing, NULL, NULL);
+
+	assert((size_t)ftell(empty) == strlen("<>\n\t<http://example.org/pred> "));
+
+	serd_writer_free(writer);
+	fclose(empty);
+
 	serd_env_free(env);
 	fclose(fd);
 }
@@ -619,6 +600,40 @@ test_reader(const char* path)
 
 	assert(serd_reader_read_string(reader, USTR("This isn't Turtle at all.")));
 
+	// A read of a big page hits EOF then fails to read chunks immediately
+	{
+		FILE* temp = tmpfile();
+		assert(temp);
+		fprintf(temp, "_:s <http://example.org/p> _:o .\n");
+		fflush(temp);
+		fseek(temp, 0L, SEEK_SET);
+
+		serd_reader_start_stream(reader, temp, NULL, true);
+
+		assert(serd_reader_read_chunk(reader) == SERD_SUCCESS);
+		assert(serd_reader_read_chunk(reader) == SERD_FAILURE);
+		assert(serd_reader_read_chunk(reader) == SERD_FAILURE);
+
+		serd_reader_end_stream(reader);
+		fclose(temp);
+	}
+
+	// A byte-wise reader that hits EOF once then continues (like a socket)
+	{
+		size_t n_reads = 0;
+		serd_reader_start_source_stream(reader,
+		                                (SerdSource)eof_test_read,
+		                                (SerdStreamErrorFunc)eof_test_error,
+		                                &n_reads,
+		                                NULL,
+		                                1);
+
+		assert(serd_reader_read_chunk(reader) == SERD_SUCCESS);
+		assert(serd_reader_read_chunk(reader) == SERD_FAILURE);
+		assert(serd_reader_read_chunk(reader) == SERD_SUCCESS);
+		assert(serd_reader_read_chunk(reader) == SERD_FAILURE);
+	}
+
 	serd_reader_free(reader);
 }
 
@@ -638,7 +653,6 @@ main(void)
 	test_node_from_substring();
 	test_uri_from_string();
 	test_relative_uri();
-	test_env();
 	test_read_chunks();
 
 	const char* const path = "serd_test.ttl";
