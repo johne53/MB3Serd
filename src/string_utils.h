@@ -21,7 +21,9 @@
 
 #include <assert.h>
 #include <ctype.h>
+#if (!defined (_MSC_VER) || (_MSC_VER >= 1900)) // Test added by JE - 19-08-2020
 #include <stdbool.h>
+#endif
 #include <stddef.h>
 #include <stdint.h>
 
