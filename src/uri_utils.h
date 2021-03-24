@@ -21,7 +21,9 @@
 
 #include "string_utils.h"
 
+#if (!defined (_MSC_VER) || (_MSC_VER >= 1900)) // Test added by JE - 24-03-2021
 #include <stdbool.h>
+#endif
 #include <stdint.h>
 #include <string.h>
 

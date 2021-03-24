@@ -18,7 +18,9 @@
 #define SERD_STACK_H
 
 #include <assert.h>
+#if (!defined (_MSC_VER) || (_MSC_VER >= 1900)) // Test added by JE - 24-03-2021
 #include <stdbool.h>
+#endif
 #include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -96,7 +98,9 @@ serd_stack_push_aligned(SerdStack* stack, size_t n_bytes, size_t align)
   }
 
   // Set top of stack to pad count so we can properly pop later
+#if (!defined (_MSC_VER) || (_MSC_VER >= 1900)) // Test added by JE - 24-03-2021
   assert(pad < UINT8_MAX);
+#endif
   stack->buf[stack->size - 1] = (uint8_t)pad;
 
   // Push requested space at aligned location
