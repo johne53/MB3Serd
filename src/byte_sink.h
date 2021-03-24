@@ -1,5 +1,5 @@
 /*
-  Copyright 2011-2020 David Robillard <http://drobilla.net>
+  Copyright 2011-2020 David Robillard <d@drobilla.net>
 
   Permission to use, copy, modify, and/or distribute this software for any
   purpose with or without fee is hereby granted, provided that the above
@@ -23,74 +23,76 @@
 #include "serd/serd.h"
 
 #include <stddef.h>
+#include <stdint.h>
 #include <string.h>
 
 typedef struct SerdByteSinkImpl {
-	SerdSink sink;
-	void*    stream;
-	uint8_t* buf;
-	size_t   size;
-	size_t   block_size;
+  SerdSink sink;
+  void*    stream;
+  uint8_t* buf;
+  size_t   size;
+  size_t   block_size;
 } SerdByteSink;
 
 static inline SerdByteSink
 serd_byte_sink_new(SerdSink sink, void* stream, size_t block_size)
 {
-	SerdByteSink bsink;
-	bsink.sink       = sink;
-	bsink.stream     = stream;
-	bsink.size       = 0;
-	bsink.block_size = block_size;
-	bsink.buf        = ((block_size > 1)
-	                    ? (uint8_t*)serd_bufalloc(block_size)
-	                    : NULL);
-	return bsink;
+  SerdByteSink bsink = {sink, stream, NULL, 0, block_size};
+
+  if (block_size > 1) {
+    bsink.buf = (uint8_t*)serd_allocate_buffer(block_size);
+  }
+
+  return bsink;
 }
 
 static inline void
 serd_byte_sink_flush(SerdByteSink* bsink)
 {
-	if (bsink->block_size > 1 && bsink->size > 0) {
-		bsink->sink(bsink->buf, bsink->size, bsink->stream);
-		bsink->size = 0;
-	}
+  if (bsink->block_size > 1 && bsink->size > 0) {
+    bsink->sink(bsink->buf, bsink->size, bsink->stream);
+    bsink->size = 0;
+  }
 }
 
 static inline void
 serd_byte_sink_free(SerdByteSink* bsink)
 {
-	serd_byte_sink_flush(bsink);
-	free(bsink->buf);
-	bsink->buf = NULL;
+  serd_byte_sink_flush(bsink);
+  serd_free_aligned(bsink->buf);
+  bsink->buf = NULL;
 }
 
 static inline size_t
 serd_byte_sink_write(const void* buf, size_t len, SerdByteSink* bsink)
 {
-	if (len == 0) {
-		return 0;
-	} else if (bsink->block_size == 1) {
-		return bsink->sink(buf, len, bsink->stream);
-	}
+  if (len == 0) {
+    return 0;
+  }
 
-	const size_t orig_len = len;
-	while (len) {
-		const size_t space = bsink->block_size - bsink->size;
-		const size_t n     = MIN(space, len);
+  if (bsink->block_size == 1) {
+    return bsink->sink(buf, len, bsink->stream);
+  }
 
-		// Write as much as possible into the remaining buffer space
-		memcpy(bsink->buf + bsink->size, buf, n);
-		bsink->size += n;
-		buf          = (const uint8_t*)buf + n;
-		len         -= n;
+  const size_t orig_len = len;
+  while (len) {
+    const size_t space = bsink->block_size - bsink->size;
+    const size_t n     = MIN(space, len);
 
-		// Flush page if buffer is full
-		if (bsink->size == bsink->block_size) {
-			bsink->sink(bsink->buf, bsink->block_size, bsink->stream);
-			bsink->size = 0;
-		}
-	}
-	return orig_len;
+    // Write as much as possible into the remaining buffer space
+    memcpy(bsink->buf + bsink->size, buf, n);
+    bsink->size += n;
+    buf = (const uint8_t*)buf + n;
+    len -= n;
+
+    // Flush page if buffer is full
+    if (bsink->size == bsink->block_size) {
+      bsink->sink(bsink->buf, bsink->block_size, bsink->stream);
+      bsink->size = 0;
+    }
+  }
+
+  return orig_len;
 }
 
-#endif  // SERD_BYTE_SINK_H
+#endif // SERD_BYTE_SINK_H

@@ -11,7 +11,7 @@ from waflib.extras import autowaf
 # major increment <=> incompatible changes
 # minor increment <=> compatible changes (additions)
 # micro increment <=> no interface changes
-SERD_VERSION       = '0.30.5'
+SERD_VERSION       = '0.30.11'
 SERD_MAJOR_VERSION = '0'
 
 # Mandatory waf variables
@@ -42,7 +42,12 @@ def options(ctx):
 def configure(conf):
     conf.load('compiler_c', cache=True)
     conf.load('autowaf', cache=True)
-    autowaf.set_c_lang(conf, 'c99')
+
+    if conf.env.DOCS:
+        conf.load('sphinx')
+
+    if not autowaf.set_c_lang(conf, 'c11', mandatory=False):
+        autowaf.set_c_lang(conf, 'c99')
 
     if Options.options.strict:
         # Check for programs used by lint target
@@ -55,11 +60,14 @@ def configure(conf):
             'clang': [
                 '-Wno-cast-align',
                 '-Wno-cast-qual',
+                '-Wno-conversion',
                 '-Wno-covered-switch-default',
                 '-Wno-disabled-macro-expansion',
                 '-Wno-double-promotion',
                 '-Wno-format-nonliteral',
                 '-Wno-implicit-fallthrough',
+                '-Wno-nullability-extension',
+                '-Wno-nullable-to-nonnull-conversion',
                 '-Wno-padded',
                 '-Wno-reserved-id-macro',
                 '-Wno-sign-conversion',
@@ -71,8 +79,6 @@ def configure(conf):
                 '-Wno-inline',
                 '-Wno-padded',
                 '-Wno-sign-conversion',
-                '-Wno-suggest-attribute=const',
-                '-Wno-suggest-attribute=pure',
             ],
             'msvc': [
                 '/wd4061',  # enumerator in switch is not explicitly handled
@@ -91,13 +97,15 @@ def configure(conf):
             ],
             'gcc': [
                 '-Wno-bad-function-cast',
-                '-Wno-suggest-attribute=malloc'
             ],
             'msvc': [
                 '/wd4706',  # assignment within conditional expression
                 '/wd5045',  # will insert Spectre mitigation for memory load
             ],
         })
+
+        if 'mingw' in conf.env.CC[0]:
+            conf.env.append_value('CFLAGS', '-Wno-unused-macros')
 
     conf.env.update({
         'BUILD_UTILS': not Options.options.no_utils,
@@ -129,8 +137,18 @@ def configure(conf):
                                 defines     = ['_POSIX_C_SOURCE=200809L'],
                                 mandatory   = False)
 
-    autowaf.set_lib_env(conf, 'serd', SERD_VERSION)
-    conf.write_config_header('serd_config.h', remove=False)
+    # Set up environment for building/using as a subproject
+    autowaf.set_lib_env(conf, 'serd', SERD_VERSION,
+                        include_path=str(conf.path.find_node('include')))
+
+    if conf.env.BUILD_TESTS:
+        serdi_node = conf.path.get_bld().make_node('serdi_static')
+    else:
+        serdi_node = conf.path.get_bld().make_node('serdi')
+
+    conf.env.SERDI = [serdi_node.abspath()]
+
+    conf.define('SERD_NO_DEFAULT_CONFIG', 1)
 
     autowaf.display_summary(
         conf,
@@ -157,15 +175,15 @@ lib_source = ['src/base64.c',
 def build(bld):
     # C Headers
     includedir = '${INCLUDEDIR}/serd-%s/serd' % SERD_MAJOR_VERSION
-    bld.install_files(includedir, bld.path.ant_glob('serd/*.h'))
+    bld.install_files(includedir, bld.path.ant_glob('include/serd/*.h'))
 
     # Pkgconfig file
     autowaf.build_pc(bld, 'SERD', SERD_VERSION, SERD_MAJOR_VERSION, [],
                      {'SERD_MAJOR_VERSION': SERD_MAJOR_VERSION})
 
     defines = []
-    lib_args = {'export_includes': ['.'],
-                'includes':        ['.', './src'],
+    lib_args = {'export_includes': ['include'],
+                'includes':        ['include'],
                 'cflags':          ['-fvisibility=hidden'],
                 'lib':             ['m'],
                 'vnum':            SERD_VERSION,
@@ -181,7 +199,7 @@ def build(bld):
             source          = lib_source,
             name            = 'libserd',
             target          = 'serd-%s' % SERD_MAJOR_VERSION,
-            defines         = defines + ['SERD_SHARED', 'SERD_INTERNAL'],
+            defines         = defines + ['SERD_INTERNAL'],
             **lib_args)
 
     # Static library
@@ -190,12 +208,12 @@ def build(bld):
             source          = lib_source,
             name            = 'libserd_static',
             target          = 'serd-%s' % SERD_MAJOR_VERSION,
-            defines         = defines + ['SERD_INTERNAL'],
+            defines         = defines + ['SERD_STATIC', 'SERD_INTERNAL'],
             **lib_args)
 
     if bld.env.BUILD_TESTS:
         coverage_flags = [''] if bld.env.NO_COVERAGE else ['--coverage']
-        test_args = {'includes':     ['.', './src'],
+        test_args = {'includes':     ['include'],
                      'cflags':       coverage_flags,
                      'linkflags':    coverage_flags,
                      'lib':          lib_args['lib'],
@@ -206,20 +224,23 @@ def build(bld):
             source       = lib_source,
             name         = 'libserd_profiled',
             target       = 'serd_profiled',
-            defines      = defines + ['SERD_INTERNAL'],
+            defines      = defines + ['SERD_STATIC', 'SERD_INTERNAL'],
             **test_args)
 
         # Test programs
         for prog in [('serdi_static', 'src/serdi.c'),
-                     ('env_test', 'tests/env_test.c'),
-                     ('free_null_test', 'tests/free_null_test.c'),
-                     ('read_chunk_test', 'tests/read_chunk_test.c'),
-                     ('serd_test', 'tests/serd_test.c')]:
+                     ('test_env', 'test/test_env.c'),
+                     ('test_free_null', 'test/test_free_null.c'),
+                     ('test_node', 'test/test_node.c'),
+                     ('test_read_chunk', 'test/test_read_chunk.c'),
+                     ('test_reader_writer', 'test/test_reader_writer.c'),
+                     ('test_string', 'test/test_string.c'),
+                     ('test_uri', 'test/test_uri.c')]:
             bld(features     = 'c cprogram',
                 source       = prog[1],
                 use          = 'libserd_profiled',
                 target       = prog[0],
-                defines      = defines,
+                defines      = defines + ['SERD_STATIC'],
                 **test_args)
 
     # Utilities
@@ -227,7 +248,7 @@ def build(bld):
         obj = bld(features     = 'c cprogram',
                   source       = 'src/serdi.c',
                   target       = 'serdi',
-                  includes     = ['.', './src'],
+                  includes     = ['include'],
                   use          = 'libserd',
                   lib          = lib_args['lib'],
                   install_path = '${BINDIR}')
@@ -239,13 +260,8 @@ def build(bld):
 
     # Documentation
     if bld.env.DOCS:
-        autowaf.build_dox(bld, 'SERD', SERD_VERSION, top, out)
-        bld(features='subst',
-            source='doc/index.html.in',
-            target='doc/index.html',
-            install_path='',
-            name='index',
-            SERD_VERSION=SERD_VERSION)
+        bld.env.SERD_MAJOR_VERSION = SERD_MAJOR_VERSION
+        bld.recurse('doc/c')
 
     # Man page
     bld.install_files('${MANDIR}/man1', 'doc/serdi.1')
@@ -269,6 +285,10 @@ def lint(ctx):
                               "wscript",
                               "--ignore",
                               "E101,E129,W191,E221,W504,E251,E241,E741"])
+        st += subprocess.call([ctx.env.FLAKE8[0],
+                               "scripts/serd_bench.py",
+                               "--ignore",
+                               "E203"])
     else:
         Logs.warn("Not running flake8")
 
@@ -284,7 +304,9 @@ def lint(ctx):
 
     if "CLANG_TIDY" in ctx.env and "clang" in ctx.env.CC[0]:
         Logs.info("Running clang-tidy")
-        sources = glob.glob('src/*.c') + glob.glob('tests/*.c')
+        sources = glob.glob('include/serd/*.h*')
+        sources += glob.glob('src/*.c')
+        sources += glob.glob('test/*.c')
         sources = list(map(os.path.abspath, sources))
         procs = []
         for source in sources:
@@ -406,9 +428,9 @@ def _test_output_syntax(test_class):
 
 
 def _wrapped_command(cmd):
-    if Options.options.test_wrapper:
+    if Options.options.wrapper:
         import shlex
-        return shlex.split(Options.options.test_wrapper) + cmd
+        return shlex.split(Options.options.wrapper) + cmd
 
     return cmd
 
@@ -460,7 +482,7 @@ def test_suite(ctx, base_uri, testdir, report, isyntax, options=[]):
     srcdir = ctx.path.abspath()
 
     mf = 'http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#'
-    manifest_path = os.path.join(srcdir, 'tests', testdir, 'manifest.ttl')
+    manifest_path = os.path.join(srcdir, 'test', testdir, 'manifest.ttl')
     model, instances = _load_rdf(manifest_path)
 
     asserter = ''
@@ -476,7 +498,7 @@ def test_suite(ctx, base_uri, testdir, report, isyntax, options=[]):
             for test in sorted(tests):
                 action_node = model[test][mf + 'action'][0]
                 basename    = os.path.basename(action_node)
-                action      = os.path.join('tests', testdir, basename)
+                action      = os.path.join('test', testdir, basename)
                 rel_action  = os.path.join(os.path.relpath(srcdir), action)
                 uri         = base_uri + os.path.basename(action)
                 command     = [serdi] + options + ['-f', rel_action, uri]
@@ -525,7 +547,7 @@ def test(tst):
     for i in ['bad', 'good', 'lax',
               'TurtleTests', 'NTriplesTests', 'NQuadsTests', 'TriGTests']:
         try:
-            test_dir = os.path.join('tests', i)
+            test_dir = os.path.join('test', i)
             os.makedirs(test_dir)
             for i in glob.glob(test_dir + '/*.*'):
                 os.remove(i)
@@ -535,15 +557,18 @@ def test(tst):
     srcdir = tst.path.abspath()
 
     with tst.group('Unit') as check:
-        check(['./env_test'])
-        check(['./free_null_test'])
-        check(['./read_chunk_test'])
-        check(['./serd_test'])
+        check(['./test_env'])
+        check(['./test_free_null'])
+        check(['./test_node'])
+        check(['./test_read_chunk'])
+        check(['./test_reader_writer'])
+        check(['./test_string'])
+        check(['./test_uri'])
 
     def test_syntax_io(check, in_name, check_name, lang):
-        in_path = 'tests/good/%s' % in_name
+        in_path = 'test/good/%s' % in_name
         out_path = in_path + '.io'
-        check_path = '%s/tests/good/%s' % (srcdir, check_name)
+        check_path = '%s/test/good/%s' % (srcdir, check_name)
 
         check([serdi, '-o', lang, '%s/%s' % (srcdir, in_path), in_path],
               stdout=out_path, name=in_name)
@@ -555,10 +580,10 @@ def test(tst):
         test_syntax_io(check, 'qualify-in.ttl', 'qualify-out.ttl', 'turtle')
 
     with tst.group('GoodCommands') as check:
-        check([serdi, '%s/tests/good/manifest.ttl' % srcdir])
+        check([serdi, '%s/serd.ttl' % srcdir], stdout=os.devnull)
         check([serdi, '-v'])
         check([serdi, '-h'])
-        check([serdi, '-s', '<foo> a <#Thingie> .'])
+        check([serdi, '-s', '<urn:eg:s> a <urn:eg:T> .'])
         check([serdi, os.devnull])
         with tempfile.TemporaryFile(mode='r') as stdin:
             check([serdi, '-'], stdin=stdin)
@@ -576,15 +601,16 @@ def test(tst):
         check([serdi, '-o', 'illegal'])
         check([serdi, '-o'])
         check([serdi, '-p'])
-        check([serdi, '-q', '%s/tests/bad/bad-base.ttl' % srcdir], stderr=None)
+        check([serdi, '-q', '%s/test/bad/bad-base.ttl' % srcdir], stderr=None)
         check([serdi, '-r'])
         check([serdi, '-z'])
+        check([serdi, '-s', '<foo> a <Bar> .'])
 
     with tst.group('IoErrors', expected=1) as check:
         check([serdi, '-e', 'file://%s/' % srcdir], name='Read directory')
         check([serdi, 'file://%s/' % srcdir], name='Bulk read directory')
         if os.path.exists('/dev/full'):
-            check([serdi, 'file://%s/tests/good/manifest.ttl' % srcdir],
+            check([serdi, 'file://%s/test/good/manifest.ttl' % srcdir],
                   stdout='/dev/full', name='Write error')
 
     if sys.version_info.major >= 3:
@@ -609,7 +635,7 @@ def test(tst):
             Logs.warn('Failed to import rdflib, not running NEWS tests')
 
     # Serd-specific test suites
-    serd_base = 'http://drobilla.net/sw/serd/tests/'
+    serd_base = 'http://drobilla.net/sw/serd/test/'
     test_suite(tst, serd_base + 'good/', 'good', None, 'Turtle')
     test_suite(tst, serd_base + 'bad/', 'bad', None, 'Turtle')
     test_suite(tst, serd_base + 'lax/', 'lax', None, 'Turtle', ['-l'])

@@ -84,11 +84,15 @@ test:x64_dbg:
   image: lv2plugin/debian-x64
   script:
     - python ./waf test
+    - mkdir -p build/doc/
     - cp doc/*.svg build/doc/
-    - groff -Thtml -P -l -P -r -man -wall doc/serdi.1 > build/doc/serdi.html
+    - cp doc/mandoc.css build/doc/
+    - mandoc -Thtml -Werror -O style=mandoc.css doc/serdi.1 > build/doc/serdi.html
   needs: ["x64_dbg"]
   artifacts:
-    paths: ["build/coverage", "build/doc"]
+    paths:
+      - build/doc
+      - build/coverage
 
 
 x64_rel:
@@ -113,6 +117,20 @@ test:x64_static:
   image: lv2plugin/debian-x64
   script: python ./waf test
   needs: ["x64_static"]
+
+
+x64_sanitize:
+  <<: *build_definition
+  image: lv2plugin/debian-x64-clang
+  script:
+    - python ./waf configure build -ST --werror --no-coverage
+    - python ./waf test
+  variables:
+    CC: "clang"
+    CFLAGS: "-fno-sanitize-recover=all -fsanitize=address -fsanitize=undefined -fsanitize=float-divide-by-zero -fsanitize=unsigned-integer-overflow -fsanitize=implicit-conversion -fsanitize=local-bounds -fsanitize=nullability"
+    CXX: "clang++"
+    CXXFLAGS: "-fno-sanitize-recover=all -fsanitize=address -fsanitize=undefined -fsanitize=float-divide-by-zero -fsanitize=unsigned-integer-overflow -fsanitize=implicit-conversion -fsanitize=local-bounds -fsanitize=nullability"
+    LINKFLAGS: "-fno-sanitize-recover=all -fsanitize=address -fsanitize=undefined -fsanitize=float-divide-by-zero -fsanitize=unsigned-integer-overflow -fsanitize=implicit-conversion -fsanitize=local-bounds -fsanitize=nullability"
 
 
 mingw32_dbg:
@@ -202,12 +220,11 @@ pages:
   script:
     - mkdir -p .public/doc
     - mkdir -p .public/man
-    - mkdir -p .public/images
-    - mv build/doc/*.svg .public/images
-    - mv build/doc/html/ .public/doc/html
-    - mv build/coverage/ .public/coverage
-    - mv build/doc/index.html .public/index.html
+    - mkdir -p .public/c
+    - mv build/doc/c/singlehtml .public/c/singlehtml
+    - mv build/doc/c/html .public/c/html
     - mv build/doc/serdi.html .public/man/serdi.html
+    - mv build/doc/mandoc.css .public/man/mandoc.css
     - mv .public public
   artifacts:
     paths:

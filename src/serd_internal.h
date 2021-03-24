@@ -1,5 +1,5 @@
 /*
-  Copyright 2011-2016 David Robillard <http://drobilla.net>
+  Copyright 2011-2020 David Robillard <d@drobilla.net>
 
   Permission to use, copy, modify, and/or distribute this software for any
   purpose with or without fee is hereby granted, provided that the above
@@ -19,12 +19,7 @@
 
 #include "serd/serd.h"
 
-#include <assert.h>
-#include <ctype.h>
-#include <errno.h>
 #include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 
 // Added by JE - 17-11-2019
 #ifndef UINT8_MAX
@@ -37,7 +32,7 @@
 #define SERD_PAGE_SIZE 4096
 
 #ifndef MIN
-#    define MIN(a, b) (((a) < (b)) ? (a) : (b))
+#  define MIN(a, b) (((a) < (b)) ? (a) : (b))
 #endif
 
 /* Error reporting */
@@ -45,12 +40,12 @@
 static inline void
 serd_error(SerdErrorSink error_sink, void* handle, const SerdError* e)
 {
-	if (error_sink) {
-		error_sink(handle, e);
-	} else {
-		fprintf(stderr, "error: %s:%u:%u: ", e->filename, e->line, e->col);
-		vfprintf(stderr, e->fmt, *e->args);
-	}
+  if (error_sink) {
+    error_sink(handle, e);
+  } else {
+    fprintf(stderr, "error: %s:%u:%u: ", e->filename, e->line, e->col);
+    vfprintf(stderr, e->fmt, *e->args);
+  }
 }
 
-#endif  // SERD_INTERNAL_H
+#endif // SERD_INTERNAL_H

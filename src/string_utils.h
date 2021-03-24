@@ -1,5 +1,5 @@
 /*
-  Copyright 2011-2020 David Robillard <http://drobilla.net>
+  Copyright 2011-2020 David Robillard <d@drobilla.net>
 
   Permission to use, copy, modify, and/or distribute this software for any
   purpose with or without fee is hereby granted, provided that the above
@@ -19,8 +19,6 @@
 
 #include "serd/serd.h"
 
-#include <assert.h>
-#include <ctype.h>
 #if (!defined (_MSC_VER) || (_MSC_VER >= 1900)) // Test added by JE - 19-08-2020
 #include <stdbool.h>
 #endif
@@ -28,7 +26,7 @@
 #include <stdint.h>
 
 /** Unicode replacement character in UTF-8 */
-static const uint8_t replacement_char[] = { 0xEF, 0xBF, 0xBD };
+static const uint8_t replacement_char[] = {0xEF, 0xBF, 0xBD};
 
 /** Return true if `c` lies within [`min`...`max`] (inclusive) */
 static inline bool
@@ -69,11 +67,22 @@ static inline bool
 is_space(const char c)
 {
 	switch (c) {
-	case ' ': case '\f': case '\n': case '\r': case '\t': case '\v':
+  case ' ':
+  case '\f':
+  case '\n':
+  case '\r':
+  case '\t':
+  case '\v':
 		return true;
 	default:
 		return false;
 	}
+}
+
+static inline bool
+is_print(const int c)
+{
+  return c >= 0x20 && c <= 0x7E;
 }
 
 static inline bool
@@ -85,8 +94,8 @@ is_base64(const uint8_t c)
 static inline bool
 is_windows_path(const uint8_t* path)
 {
-	return is_alpha(path[0]) && (path[1] == ':' || path[1] == '|')
-		&& (path[2] == '/' || path[2] == '\\');
+  return is_alpha(path[0]) && (path[1] == ':' || path[1] == '|') &&
+         (path[2] == '/' || path[2] == '\\');
 }
 
 size_t
@@ -95,14 +104,21 @@ serd_substrlen(const uint8_t* str,
                size_t*        n_bytes,
                SerdNodeFlags* flags);
 
+static inline char
+serd_to_upper(const char c)
+{
+  return (char)((c >= 'a' && c <= 'z') ? c - 32 : c);
+}
+
 static inline int
 serd_strncasecmp(const char* s1, const char* s2, size_t n)
 {
 	for (; n > 0 && *s2; s1++, s2++, --n) {
-		if (toupper(*s1) != toupper(*s2)) {
+    if (serd_to_upper(*s1) != serd_to_upper(*s2)) {
 			return ((*(const uint8_t*)s1 < *(const uint8_t*)s2) ? -1 : +1);
 		}
 	}
+
 	return 0;
 }
 
@@ -111,13 +127,20 @@ utf8_num_bytes(const uint8_t c)
 {
 	if ((c & 0x80) == 0) {  // Starts with `0'
 		return 1;
-	} else if ((c & 0xE0) == 0xC0) {  // Starts with `110'
+  }
+
+  if ((c & 0xE0) == 0xC0) { // Starts with `110'
 		return 2;
-	} else if ((c & 0xF0) == 0xE0) {  // Starts with `1110'
+  }
+
+  if ((c & 0xF0) == 0xE0) { // Starts with `1110'
 		return 3;
-	} else if ((c & 0xF8) == 0xF0) {  // Starts with `11110'
+  }
+
+  if ((c & 0xF8) == 0xF0) { // Starts with `11110'
 		return 4;
 	}
+
 	return 0;
 }
 
@@ -138,7 +161,10 @@ static inline uint32_t
 parse_utf8_char(const uint8_t* utf8, size_t* size)
 {
 	switch (*size = utf8_num_bytes(utf8[0])) {
-	case 1: case 2: case 3: case 4:
+  case 1:
+  case 2:
+  case 3:
+  case 4:
 		return parse_counted_utf8_char(utf8, *size);
 	default:
 		*size = 0;

@@ -1,5 +1,5 @@
 /*
-  Copyright 2011-2018 David Robillard <http://drobilla.net>
+  Copyright 2011-2020 David Robillard <d@drobilla.net>
 
   Permission to use, copy, modify, and/or distribute this software for any
   purpose with or without fee is hereby granted, provided that the above
@@ -17,6 +17,8 @@
 #ifndef SERD_BASE64_H
 #define SERD_BASE64_H
 
+#include "serd/serd.h"
+
 #if (!defined (_MSC_VER) || (_MSC_VER >= 1900)) // Test added by JE - 19-08-2020
 #include <stdbool.h>
 #endif
@@ -30,7 +32,7 @@
    @param wrap_lines Wrap lines at 76 characters to conform to RFC 2045.
    @return The length of the base64 encoding, excluding null terminator.
 */
-size_t
+SERD_CONST_FUNC size_t
 serd_base64_get_length(size_t size, bool wrap_lines);
 
 /**

@@ -1,11 +1,40 @@
-serd (0.30.5) unstable;
+serd (0.30.11) unstable;
+
+  * Fix writing long literals with triple quotes
+
+ -- David Robillard <d@drobilla.net>  Mon, 15 Feb 2021 16:34:35 +0000
+
+serd (0.30.10) stable;
+
+  * Add fallback configuration if documentation theme is unavailable
+  * Fix SERD_DISABLE_DEPRECATED
+  * Fix building for older MacOS versions on newer MacOS
+  * Fix documentation installation directory
+
+ -- David Robillard <d@drobilla.net>  Wed, 20 Jan 2021 15:55:35 +0000
+
+serd (0.30.8) stable;
+
+  * Deprecate serd_uri_to_path()
+  * Don't install API man pages
+  * Fix potential memory error when serialising URIs
+  * Move headers to an include directory
+  * Refuse to write relative URI references to NTriples
+  * Remove the need for a generated configuration header
+  * Remove use of C character class functions that may use locale
+  * Split up and reorganize unit tests
+  * Use aligned allocation via C11 or Windows API where possible
+
+ -- David Robillard <d@drobilla.net>  Thu, 07 Jan 2021 21:19:36 +0000
+
+serd (0.30.6) stable;
 
   * Fix various minor warnings and other code quality issues
   * Improve reader error handling
   * Make all free functions tolerant of NULL
   * Parse prefixed names more strictly
 
- -- David Robillard <d@drobilla.net>  Sun, 16 Aug 2020 11:01:53 +0000
+ -- David Robillard <d@drobilla.net>  Sun, 27 Sep 2020 10:51:38 +0000
 
 serd (0.30.4) stable;
 
