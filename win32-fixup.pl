@@ -66,7 +66,6 @@ if (-1 != index($command, "-X64")) {
 }
 
 process_file ("serd.pc");
-process_file ("build/serd_config.h");
 
 if ($command eq -buildall) {
 	process_file ("build/msvc/serd.rc");
