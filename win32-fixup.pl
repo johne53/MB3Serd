@@ -48,7 +48,14 @@ sub process_file
 	    s/\@Release32TestSuiteFolder@/$release32_testsuite_folder/g;
 	    s/\@Debug32TargetFolder@/$debug32_target_folder/g;
 	    s/\@Release32TargetFolder@/$release32_target_folder/g;
+	    s/\@GenericWin64LibraryFolder@/$generic_win64_library_folder/g;
+	    s/\@GenericWin64BinaryFolder@/$generic_win64_binary_folder/g;
+	    s/\@Debug64TestSuiteFolder@/$debug64_testsuite_folder/g;
+	    s/\@Release64TestSuiteFolder@/$release64_testsuite_folder/g;
+	    s/\@Debug64TargetFolder@/$debug64_target_folder/g;
+	    s/\@Release64TargetFolder@/$release64_target_folder/g;
 	    s/\@TargetSxSFolder@/$target_sxs_folder/g;
+	    s/\@LibraryExt@/$library_ext/g;
 	    s/\@PREFIX@/$prefix/g;
 	    s/\@EXEC_PREFIX@/$exec_prefix/g;
 	    s/\@INCLUDEDIR@/$generic_include_folder/g;
@@ -59,6 +66,12 @@ sub process_file
 
 my $command=join(' ',@ARGV);
 
+if (-1 != index($command, "-linux")) {
+	$library_ext = ".a";
+} else {
+	$library_ext = ".lib";
+}
+
 if (-1 != index($command, "-X64")) {
 	$serd_api_version = "64-0";
 } else {
@@ -66,9 +79,10 @@ if (-1 != index($command, "-X64")) {
 }
 
 process_file ("serd.pc");
-process_file ("build/serd_config.h");
 
-if ($command eq -buildall) {
+if (-1 != index($command, "-buildall")) {
+	process_file ("build/serd_config.h");
 	process_file ("build/msvc/serd.rc");
 	process_file ("build/msvc/serd.vsprops");
+	process_file ("build/msvc/serd.props");
 }
