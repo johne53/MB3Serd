@@ -86,6 +86,7 @@ def configure(conf):
                 '/wd4514',  # unreferenced inline function has been removed
                 '/wd4710',  # function not inlined
                 '/wd4711',  # function selected for automatic inline expansion
+                '/wd4800',  # implicit conversion from int to bool
                 '/wd4820',  # padding added after construct
                 '/wd4996',  # POSIX name for this item is deprecated
             ],
@@ -581,6 +582,8 @@ def test(tst):
 
     with tst.group('GoodCommands') as check:
         check([serdi, '%s/serd.ttl' % srcdir], stdout=os.devnull)
+        check([serdi, '-li', 'turtle', '%s/test/lax/test-bad-string.ttl' % srcdir],
+              stdout=os.devnull)
         check([serdi, '-v'])
         check([serdi, '-h'])
         check([serdi, '-s', '<urn:eg:s> a <urn:eg:T> .'])
@@ -598,6 +601,7 @@ def test(tst):
         check([serdi, '-i', 'illegal'])
         check([serdi, '-i', 'turtle'])
         check([serdi, '-i'])
+        check([serdi, '-fi'])
         check([serdi, '-o', 'illegal'])
         check([serdi, '-o'])
         check([serdi, '-p'])

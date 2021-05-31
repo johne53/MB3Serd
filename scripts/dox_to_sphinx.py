@@ -257,6 +257,9 @@ def dox_to_rst(index, lang, node):
 
         return " " + markup.strip()
 
+    if node.tag == "emphasis":
+        return "*%s*" % plain_text(node)
+
     if node.tag == "lsquo":
         return "‘"
 
@@ -264,8 +267,7 @@ def dox_to_rst(index, lang, node):
         return "’"
 
     if node.tag == "computeroutput":
-        assert len(node) == 0
-        return "``%s``" % node.text
+        return "``%s``" % plain_text(node)
 
     if node.tag == "itemizedlist":
         markup = ""

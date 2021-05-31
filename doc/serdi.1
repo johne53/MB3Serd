@@ -12,7 +12,7 @@
 .Op Fl o Ar syntax
 .Op Fl p Ar prefix
 .Op Fl r Ar root
-.Op Fl s Ar input
+.Op Fl s Ar string
 .Ar input
 .Op Ar base_uri
 .Sh DESCRIPTION
@@ -111,6 +111,14 @@ Display version information and exit.
 .Sh EXIT STATUS
 .Nm
 exits with a status of 0, or non-zero if an error occured.
+.Sh EXAMPLES
+To pretty-print a document:
+.Pp
+.Dl $ serdi -o turtle file.ttl > out.ttl
+.Pp
+To print any errors:
+.Pp
+.Dl $ serdi file.ttl > /dev/null
 .Sh SEE ALSO
 .Bl -item -compact
 .It
