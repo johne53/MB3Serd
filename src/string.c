@@ -23,13 +23,13 @@
 #include <stdlib.h>
 
 void
-serd_free(void* ptr)
+serd_free(void* const ptr)
 {
   free(ptr);
 }
 
 const uint8_t*
-serd_strerror(SerdStatus status)
+serd_strerror(const SerdStatus status)
 {
   switch (status) {
   case SERD_SUCCESS:
@@ -50,13 +50,11 @@ serd_strerror(SerdStatus status)
     return (const uint8_t*)"Invalid CURIE";
   case SERD_ERR_INTERNAL:
     return (const uint8_t*)"Internal error";
-  default:
-    break;
   }
   return (const uint8_t*)"Unknown error"; // never reached
 }
 
-static inline void
+static void
 serd_update_flags(const uint8_t c, SerdNodeFlags* const flags)
 {
   switch (c) {
@@ -66,6 +64,7 @@ serd_update_flags(const uint8_t c, SerdNodeFlags* const flags)
     break;
   case '"':
     *flags |= SERD_HAS_QUOTE;
+    break;
   default:
     break;
   }
@@ -96,7 +95,9 @@ serd_substrlen(const uint8_t* const str,
 }
 
 size_t
-serd_strlen(const uint8_t* str, size_t* n_bytes, SerdNodeFlags* flags)
+serd_strlen(const uint8_t* const str,
+            size_t* const        n_bytes,
+            SerdNodeFlags* const flags)
 {
   size_t        n_chars = 0;
   size_t        i       = 0;
@@ -116,24 +117,28 @@ serd_strlen(const uint8_t* str, size_t* n_bytes, SerdNodeFlags* flags)
   return n_chars;
 }
 
-static inline double
-read_sign(const char** sptr)
+static double
+read_sign(const char** const sptr)
 {
   double sign = 1.0;
+
   switch (**sptr) {
   case '-':
     sign = -1.0;
-    // fallthru
+    ++(*sptr);
+    break;
   case '+':
     ++(*sptr);
-    // fallthru
+    break;
   default:
-    return sign;
+    break;
   }
+
+  return sign;
 }
 
 double
-serd_strtod(const char* str, char** endptr)
+serd_strtod(const char* const str, char** const endptr)
 {
   double result = 0.0;
 

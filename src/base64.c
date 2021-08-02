@@ -50,8 +50,8 @@ static const char b64_unmap[] =
   "$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$";
 
 /** Encode 3 raw bytes to 4 base64 characters. */
-static inline void
-encode_chunk(uint8_t out[4], const uint8_t in[3], size_t n_in)
+static void
+encode_chunk(uint8_t out[4], const uint8_t in[3], const size_t n_in)
 {
   out[0] = b64_map[in[0] >> 2];
   out[1] = b64_map[((in[0] & 0x03) << 4) | ((in[1] & 0xF0) >> 4)];
@@ -92,14 +92,14 @@ serd_base64_encode(uint8_t* const    str,
   return has_newline;
 }
 
-static inline uint8_t
+static uint8_t
 unmap(const uint8_t in)
 {
   return (uint8_t)(b64_unmap[in] - 47);
 }
 
 /** Decode 4 base64 characters to 3 raw bytes. */
-static inline size_t
+static size_t
 decode_chunk(const uint8_t in[4], uint8_t out[3])
 {
   out[0] = (uint8_t)(((unmap(in[0]) << 2)) | unmap(in[1]) >> 4);
@@ -109,7 +109,9 @@ decode_chunk(const uint8_t in[4], uint8_t out[3])
 }
 
 void*
-serd_base64_decode(const uint8_t* str, size_t len, size_t* size)
+serd_base64_decode(const uint8_t* const str,
+                   const size_t         len,
+                   size_t* const        size)
 {
   void* buf = malloc((len * 3) / 4 + 2);
 

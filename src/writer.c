@@ -152,7 +152,7 @@ w_err(SerdWriter* writer, SerdStatus st, const char* fmt, ...)
   va_end(args);
 }
 
-static inline SERD_PURE_FUNC WriteContext*
+SERD_PURE_FUNC static WriteContext*
 anon_stack_top(SerdWriter* writer)
 {
   assert(!serd_stack_is_empty(&writer->anon_stack));
@@ -175,7 +175,7 @@ copy_node(SerdNode* dst, const SerdNode* src)
   }
 }
 
-static inline size_t
+static size_t
 sink(const void* buf, size_t len, SerdWriter* writer)
 {
   return serd_byte_sink_write(buf, len, &writer->byte_sink);
@@ -213,7 +213,7 @@ write_character(SerdWriter* writer, const uint8_t* utf8, size_t* size)
   return sink(escape, 10, writer);
 }
 
-static inline bool
+static bool
 uri_must_escape(const uint8_t c)
 {
   switch (c) {
@@ -553,8 +553,8 @@ write_literal(SerdWriter*        writer,
   return true;
 }
 
-// Return true iff `buf` is a valid prefixed name suffix
-static inline bool
+// Return true iff `buf` is a valid prefixed name prefix or suffix
+static bool
 is_name(const uint8_t* buf, const size_t len)
 {
   // TODO: This is more strict than it should be
@@ -595,6 +595,7 @@ write_uri_node(SerdWriter* const        writer,
 
     if (has_scheme && (writer->style & SERD_STYLE_CURIED) &&
         serd_env_qualify(writer->env, node, &prefix, &suffix) &&
+        is_name(prefix.buf, prefix.n_bytes) &&
         is_name(suffix.buf, suffix.len)) {
       write_uri(writer, prefix.buf, prefix.n_bytes);
       sink(":", 1, writer);
@@ -757,7 +758,7 @@ write_node(SerdWriter*        writer,
   return ret;
 }
 
-static inline bool
+static bool
 is_resource(const SerdNode* node)
 {
   return node && node->buf && node->type > SERD_LITERAL;

@@ -19,6 +19,7 @@
 #include "serd/serd.h"
 
 #include <assert.h>
+#include <stdint.h>
 #include <string.h>
 
 #define USTR(s) ((const uint8_t*)(s))
@@ -41,6 +42,7 @@ test_write_long_literal(void)
   assert(!serd_writer_write_statement(writer, 0, NULL, &s, &p, &o, NULL, NULL));
 
   serd_writer_free(writer);
+  serd_env_free(env);
 
   uint8_t* out = serd_chunk_sink_finish(&chunk);
 
@@ -55,11 +57,7 @@ test_write_long_literal(void)
 int
 main(void)
 {
-  const char* const path = "serd_test.ttl";
-
-  test_writer(path);
   test_write_long_literal();
 
-  printf("Success\n");
   return 0;
 }

@@ -32,6 +32,16 @@
 #include <stdlib.h>
 #include <string.h>
 
+#if defined(__clang__) && __clang_major__ >= 10
+#  define SERD_FALLTHROUGH __attribute__((fallthrough))
+_Pragma("clang diagnostic push")
+_Pragma("clang diagnostic ignored \"-Wmissing-declarations\"")
+#elif defined(__GNUC__) && __GNUC__ >= 7
+#  define SERD_FALLTHROUGH __attribute__((fallthrough))
+#else
+#  define SERD_FALLTHROUGH
+#endif
+
 #define TRY(st, exp)      \
   do {                    \
     if (((st) = (exp))) { \
@@ -39,8 +49,8 @@
     }                     \
   } while (0)
 
-static inline bool
-fancy_syntax(const SerdReader* reader)
+static bool
+fancy_syntax(const SerdReader* const reader)
 {
 	return reader->syntax == SERD_TURTLE || reader->syntax == SERD_TRIG;
 }
@@ -51,8 +61,8 @@ read_collection(SerdReader* reader, ReadContext ctx, Ref* dest);
 static SerdStatus
 read_predicateObjectList(SerdReader* reader, ReadContext ctx, bool* ate_dot);
 
-static inline uint8_t
-read_HEX(SerdReader* reader)
+static uint8_t
+read_HEX(SerdReader* const reader)
 {
 	const int c = peek_byte(reader);
 	if (is_xdigit(c)) {
@@ -64,8 +74,8 @@ read_HEX(SerdReader* reader)
 }
 
 // Read UCHAR escape, initial \ is already eaten by caller
-static inline SerdStatus
-read_UCHAR(SerdReader* reader, Ref dest, uint32_t* char_code)
+static SerdStatus
+read_UCHAR(SerdReader* const reader, const Ref dest, uint32_t* const char_code)
 {
 	const int b      = peek_byte(reader);
 	unsigned  length = 0;
@@ -120,20 +130,20 @@ read_UCHAR(SerdReader* reader, Ref dest, uint32_t* char_code)
 		buf[3] = (uint8_t)(0x80u | (c & 0x3Fu));
 		c >>= 6;
 		c |= (16 << 12);  // set bit 4
-    /* fallthru */
+    SERD_FALLTHROUGH;
 	case 3:
 		buf[2] = (uint8_t)(0x80u | (c & 0x3Fu));
 		c >>= 6;
 		c |= (32 << 6);  // set bit 5
-    /* fallthru */
+    SERD_FALLTHROUGH;
 	case 2:
 		buf[1] = (uint8_t)(0x80u | (c & 0x3Fu));
 		c >>= 6;
 		c |= 0xC0;  // set bits 6 and 7
-    /* fallthru */
+    SERD_FALLTHROUGH;
 	case 1:
 		buf[0] = (uint8_t)c;
-    /* fallthru */
+    SERD_FALLTHROUGH;
 	default:
 		break;
 	}
@@ -144,8 +154,8 @@ read_UCHAR(SerdReader* reader, Ref dest, uint32_t* char_code)
 }
 
 // Read ECHAR escape, initial \ is already eaten by caller
-static inline SerdStatus
-read_ECHAR(SerdReader* reader, Ref dest, SerdNodeFlags* flags)
+static SerdStatus
+read_ECHAR(SerdReader* const reader, const Ref dest, SerdNodeFlags* const flags)
 {
 	const int c = peek_byte(reader);
 	switch (c) {
@@ -181,8 +191,8 @@ read_ECHAR(SerdReader* reader, Ref dest, SerdNodeFlags* flags)
 	}
 }
 
-static inline SerdStatus
-bad_char(SerdReader* reader, const char* fmt, uint8_t c)
+static SerdStatus
+bad_char(SerdReader* const reader, const char* const fmt, const uint8_t c)
 {
 	// Skip bytes until the next start byte
 	for (int b = peek_byte(reader); b != EOF && ((uint8_t)b & 0x80);) {
@@ -195,7 +205,10 @@ bad_char(SerdReader* reader, const char* fmt, uint8_t c)
 }
 
 static SerdStatus
-read_utf8_bytes(SerdReader* reader, uint8_t bytes[4], uint32_t* size, uint8_t c)
+read_utf8_bytes(SerdReader* const reader,
+                uint8_t           bytes[4],
+                uint32_t* const   size,
+                const uint8_t     c)
 {
 	*size = utf8_num_bytes(c);
 	if (*size <= 1 || *size > 4) {
@@ -217,7 +230,7 @@ read_utf8_bytes(SerdReader* reader, uint8_t bytes[4], uint32_t* size, uint8_t c)
 }
 
 static SerdStatus
-read_utf8_character(SerdReader* reader, Ref dest, uint8_t c)
+read_utf8_character(SerdReader* const reader, const Ref dest, const uint8_t c)
 {
 	uint32_t   size     = 0;
 	uint8_t    bytes[4] = {0, 0, 0, 0};
@@ -232,7 +245,10 @@ read_utf8_character(SerdReader* reader, Ref dest, uint8_t c)
 }
 
 static SerdStatus
-read_utf8_code(SerdReader* reader, Ref dest, uint32_t* code, uint8_t c)
+read_utf8_code(SerdReader* const reader,
+               const Ref         dest,
+               uint32_t* const   code,
+               const uint8_t     c)
 {
 	uint32_t   size     = 0;
 	uint8_t    bytes[4] = {0, 0, 0, 0};
@@ -249,8 +265,11 @@ read_utf8_code(SerdReader* reader, Ref dest, uint32_t* code, uint8_t c)
 
 // Read one character (possibly multi-byte)
 // The first byte, c, has already been eaten by caller
-static inline SerdStatus
-read_character(SerdReader* reader, Ref dest, SerdNodeFlags* flags, uint8_t c)
+static SerdStatus
+read_character(SerdReader* const    reader,
+               const Ref            dest,
+               SerdNodeFlags* const flags,
+               const uint8_t        c)
 {
 	if (!(c & 0x80)) {
 		switch (c) {
@@ -273,7 +292,7 @@ read_character(SerdReader* reader, Ref dest, SerdNodeFlags* flags, uint8_t c)
 
 // [10] comment ::= '#' ( [^#xA #xD] )*
 static void
-read_comment(SerdReader* reader)
+read_comment(SerdReader* const reader)
 {
 	eat_byte_safe(reader, '#');
 	int c = 0;
@@ -283,8 +302,8 @@ read_comment(SerdReader* reader)
 }
 
 // [24] ws ::= #x9 | #xA | #xD | #x20 | comment
-static inline bool
-read_ws(SerdReader* reader)
+static bool
+read_ws(SerdReader* const reader)
 {
 	const int c = peek_byte(reader);
 	switch (c) {
@@ -302,8 +321,8 @@ read_ws(SerdReader* reader)
 	}
 }
 
-static inline bool
-read_ws_star(SerdReader* reader)
+static bool
+read_ws_star(SerdReader* const reader)
 {
   while (read_ws(reader)) {
   }
@@ -311,15 +330,15 @@ read_ws_star(SerdReader* reader)
 	return true;
 }
 
-static inline bool
-peek_delim(SerdReader* reader, const char delim)
+static bool
+peek_delim(SerdReader* const reader, const uint8_t delim)
 {
 	read_ws_star(reader);
 	return peek_byte(reader) == delim;
 }
 
-static inline bool
-eat_delim(SerdReader* reader, const char delim)
+static bool
+eat_delim(SerdReader* const reader, const uint8_t delim)
 {
 	if (peek_delim(reader, delim)) {
 		eat_byte_safe(reader, delim);
@@ -332,10 +351,10 @@ eat_delim(SerdReader* reader, const char delim)
 // STRING_LITERAL_LONG_QUOTE and STRING_LITERAL_LONG_SINGLE_QUOTE
 // Initial triple quotes are already eaten by caller
 static SerdStatus
-read_STRING_LITERAL_LONG(SerdReader*    reader,
-                         Ref            ref,
-                         SerdNodeFlags* flags,
-                         uint8_t        q)
+read_STRING_LITERAL_LONG(SerdReader* const    reader,
+                         const Ref            ref,
+                         SerdNodeFlags* const flags,
+                         const uint8_t        q)
 {
 	SerdStatus st = SERD_SUCCESS;
 
@@ -373,10 +392,10 @@ read_STRING_LITERAL_LONG(SerdReader*    reader,
 // STRING_LITERAL_QUOTE and STRING_LITERAL_SINGLE_QUOTE
 // Initial quote is already eaten by caller
 static SerdStatus
-read_STRING_LITERAL(SerdReader*    reader,
-                    Ref            ref,
-                    SerdNodeFlags* flags,
-                    uint8_t        q)
+read_STRING_LITERAL(SerdReader* const    reader,
+                    const Ref            ref,
+                    SerdNodeFlags* const flags,
+                    const uint8_t        q)
 {
 	SerdStatus st = SERD_SUCCESS;
 
@@ -413,7 +432,9 @@ read_STRING_LITERAL(SerdReader*    reader,
 }
 
 static SerdStatus
-read_String(SerdReader* reader, Ref node, SerdNodeFlags* flags)
+read_String(SerdReader* const    reader,
+            const Ref            node,
+            SerdNodeFlags* const flags)
 {
 	const int q1 = peek_byte(reader);
 	eat_byte_safe(reader, q1);
@@ -446,7 +467,7 @@ read_String(SerdReader* reader, Ref node, SerdNodeFlags* flags)
 	return read_STRING_LITERAL_LONG(reader, node, flags, (uint8_t)q1);
 }
 
-static inline bool
+static bool
 is_PN_CHARS_BASE(const uint32_t c)
 {
 	return ((c >= 0x00C0 && c <= 0x00D6) || (c >= 0x00D8 && c <= 0x00F6) ||
@@ -458,7 +479,7 @@ is_PN_CHARS_BASE(const uint32_t c)
 }
 
 static SerdStatus
-read_PN_CHARS_BASE(SerdReader* reader, Ref dest)
+read_PN_CHARS_BASE(SerdReader* const reader, const Ref dest)
 {
 	uint32_t   code = 0;
 	const int  c    = peek_byte(reader);
@@ -480,7 +501,7 @@ read_PN_CHARS_BASE(SerdReader* reader, Ref dest)
 	return st;
 }
 
-static inline bool
+static bool
 is_PN_CHARS(const uint32_t c)
 {
   return (is_PN_CHARS_BASE(c) || c == 0xB7 || (c >= 0x0300 && c <= 0x036F) ||
@@ -488,7 +509,7 @@ is_PN_CHARS(const uint32_t c)
 }
 
 static SerdStatus
-read_PN_CHARS(SerdReader* reader, Ref dest)
+read_PN_CHARS(SerdReader* const reader, const Ref dest)
 {
 	uint32_t   code = 0;
 	const int  c    = peek_byte(reader);
@@ -508,7 +529,7 @@ read_PN_CHARS(SerdReader* reader, Ref dest)
 }
 
 static SerdStatus
-read_PERCENT(SerdReader* reader, Ref dest)
+read_PERCENT(SerdReader* const reader, const Ref dest)
 {
 	push_byte(reader, dest, eat_byte_safe(reader, '%'));
 	const uint8_t h1 = read_HEX(reader);
@@ -522,7 +543,7 @@ read_PERCENT(SerdReader* reader, Ref dest)
 }
 
 static SerdStatus
-read_PN_LOCAL_ESC(SerdReader* reader, Ref dest)
+read_PN_LOCAL_ESC(SerdReader* const reader, const Ref dest)
 {
 	eat_byte_safe(reader, '\\');
 
@@ -558,7 +579,7 @@ read_PN_LOCAL_ESC(SerdReader* reader, Ref dest)
 }
 
 static SerdStatus
-read_PLX(SerdReader* reader, Ref dest)
+read_PLX(SerdReader* const reader, const Ref dest)
 {
 	const int c = peek_byte(reader);
 	switch (c) {
@@ -572,7 +593,7 @@ read_PLX(SerdReader* reader, Ref dest)
 }
 
 static SerdStatus
-read_PN_LOCAL(SerdReader* reader, Ref dest, bool* ate_dot)
+read_PN_LOCAL(SerdReader* const reader, const Ref dest, bool* const ate_dot)
 {
 	int        c                      = peek_byte(reader);
 	SerdStatus st                     = SERD_SUCCESS;
@@ -624,7 +645,7 @@ read_PN_LOCAL(SerdReader* reader, Ref dest, bool* ate_dot)
 
 // Read the remainder of a PN_PREFIX after some initial characters
 static SerdStatus
-read_PN_PREFIX_tail(SerdReader* reader, Ref dest)
+read_PN_PREFIX_tail(SerdReader* const reader, const Ref dest)
 {
 	int c = 0;
 	while ((c = peek_byte(reader))) {  // Middle: (PN_CHARS | '.')*
@@ -644,7 +665,7 @@ read_PN_PREFIX_tail(SerdReader* reader, Ref dest)
 }
 
 static SerdStatus
-read_PN_PREFIX(SerdReader* reader, Ref dest)
+read_PN_PREFIX(SerdReader* const reader, const Ref dest)
 {
 	if (!read_PN_CHARS_BASE(reader, dest)) {
 		return read_PN_PREFIX_tail(reader, dest);
@@ -654,7 +675,7 @@ read_PN_PREFIX(SerdReader* reader, Ref dest)
 }
 
 static SerdStatus
-read_LANGTAG(SerdReader* reader, Ref* dest)
+read_LANGTAG(SerdReader* const reader, Ref* const dest)
 {
 	int c = peek_byte(reader);
 	if (!is_alpha(c)) {
@@ -680,7 +701,7 @@ read_LANGTAG(SerdReader* reader, Ref* dest)
 }
 
 static SerdStatus
-read_IRIREF_scheme(SerdReader* reader, Ref dest)
+read_IRIREF_scheme(SerdReader* const reader, const Ref dest)
 {
 	int c = peek_byte(reader);
 	if (!is_alpha(c)) {
@@ -710,7 +731,7 @@ read_IRIREF_scheme(SerdReader* reader, Ref dest)
 }
 
 static SerdStatus
-read_IRIREF(SerdReader* reader, Ref* dest)
+read_IRIREF(SerdReader* const reader, Ref* const dest)
 {
 	if (!eat_byte_check(reader, '<')) {
 		return SERD_ERR_BAD_SYNTAX;
@@ -795,7 +816,10 @@ read_IRIREF(SerdReader* reader, Ref* dest)
 }
 
 static SerdStatus
-read_PrefixedName(SerdReader* reader, Ref dest, bool read_prefix, bool* ate_dot)
+read_PrefixedName(SerdReader* const reader,
+                  const Ref         dest,
+                  const bool        read_prefix,
+                  bool* const       ate_dot)
 {
 	SerdStatus st = SERD_SUCCESS;
 	if (read_prefix && ((st = read_PN_PREFIX(reader, dest)) > SERD_FAILURE)) {
@@ -814,7 +838,7 @@ read_PrefixedName(SerdReader* reader, Ref dest, bool read_prefix, bool* ate_dot)
 }
 
 static SerdStatus
-read_0_9(SerdReader* reader, Ref str, bool at_least_one)
+read_0_9(SerdReader* const reader, const Ref str, const bool at_least_one)
 {
 	unsigned   count = 0;
 	SerdStatus st    = SERD_SUCCESS;
@@ -830,7 +854,10 @@ read_0_9(SerdReader* reader, Ref str, bool at_least_one)
 }
 
 static SerdStatus
-read_number(SerdReader* reader, Ref* dest, Ref* datatype, bool* ate_dot)
+read_number(SerdReader* const reader,
+            Ref* const        dest,
+            Ref* const        datatype,
+            bool* const       ate_dot)
 {
 #define XSD_DECIMAL NS_XSD "decimal"
 #define XSD_DOUBLE NS_XSD "double"
@@ -875,6 +902,7 @@ read_number(SerdReader* reader, Ref* dest, Ref* datatype, bool* ate_dot)
     case '+':
     case '-':
 			push_byte(reader, *dest, eat_byte_safe(reader, c));
+      break;
     default:
       break;
 		}
@@ -892,7 +920,7 @@ read_number(SerdReader* reader, Ref* dest, Ref* datatype, bool* ate_dot)
 }
 
 static SerdStatus
-read_iri(SerdReader* reader, Ref* dest, bool* ate_dot)
+read_iri(SerdReader* const reader, Ref* const dest, bool* const ate_dot)
 {
 	switch (peek_byte(reader)) {
 	case '<':
@@ -904,12 +932,12 @@ read_iri(SerdReader* reader, Ref* dest, bool* ate_dot)
 }
 
 static SerdStatus
-read_literal(SerdReader*    reader,
-             Ref*           dest,
-             Ref*           datatype,
-             Ref*           lang,
-             SerdNodeFlags* flags,
-             bool*          ate_dot)
+read_literal(SerdReader* const    reader,
+             Ref* const           dest,
+             Ref* const           datatype,
+             Ref* const           lang,
+             SerdNodeFlags* const flags,
+             bool* const          ate_dot)
 {
 	*dest = push_node(reader, SERD_LITERAL, "", 0);
 
@@ -945,7 +973,7 @@ read_literal(SerdReader*    reader,
 }
 
 static SerdStatus
-read_verb(SerdReader* reader, Ref* dest)
+read_verb(SerdReader* const reader, Ref* const dest)
 {
 	if (peek_byte(reader) == '<') {
 		return read_IRIREF(reader, dest);
@@ -977,7 +1005,9 @@ read_verb(SerdReader* reader, Ref* dest)
 }
 
 static SerdStatus
-read_BLANK_NODE_LABEL(SerdReader* reader, Ref* dest, bool* ate_dot)
+read_BLANK_NODE_LABEL(SerdReader* const reader,
+                      Ref* const        dest,
+                      bool* const       ate_dot)
 {
 	eat_byte_safe(reader, '_');
 	eat_byte_check(reader, ':');
@@ -1030,7 +1060,7 @@ read_BLANK_NODE_LABEL(SerdReader* reader, Ref* dest, bool* ate_dot)
 }
 
 static Ref
-read_blankName(SerdReader* reader)
+read_blankName(SerdReader* const reader)
 {
 	eat_byte_safe(reader, '=');
 	if (eat_byte_check(reader, '=') != '=') {
@@ -1046,7 +1076,10 @@ read_blankName(SerdReader* reader)
 }
 
 static SerdStatus
-read_anon(SerdReader* reader, ReadContext ctx, bool subject, Ref* dest)
+read_anon(SerdReader* const reader,
+          ReadContext       ctx,
+          const bool        subject,
+          Ref* const        dest)
 {
 	const SerdStatementFlags old_flags = *ctx.flags;
 	bool                     empty     = false;
@@ -1100,7 +1133,10 @@ read_anon(SerdReader* reader, ReadContext ctx, bool subject, Ref* dest)
    encountered, and leaves stack in original calling state (i.e. pops
    everything it pushes). */
 static SerdStatus
-read_object(SerdReader* reader, ReadContext* ctx, bool emit, bool* ate_dot)
+read_object(SerdReader* const  reader,
+            ReadContext* const ctx,
+            const bool         emit,
+            bool* const        ate_dot)
 {
 	static const char* const XSD_BOOLEAN     = NS_XSD "boolean";
 	static const size_t      XSD_BOOLEAN_LEN = 40;
@@ -1214,7 +1250,7 @@ read_object(SerdReader* reader, ReadContext* ctx, bool emit, bool* ate_dot)
 }
 
 static SerdStatus
-read_objectList(SerdReader* reader, ReadContext ctx, bool* ate_dot)
+read_objectList(SerdReader* const reader, ReadContext ctx, bool* const ate_dot)
 {
 	SerdStatus st = SERD_SUCCESS;
 	TRY(st, read_object(reader, &ctx, true, ate_dot));
@@ -1231,7 +1267,9 @@ read_objectList(SerdReader* reader, ReadContext ctx, bool* ate_dot)
 }
 
 static SerdStatus
-read_predicateObjectList(SerdReader* reader, ReadContext ctx, bool* ate_dot)
+read_predicateObjectList(SerdReader* const reader,
+                         ReadContext       ctx,
+                         bool* const       ate_dot)
 {
 	SerdStatus st = SERD_SUCCESS;
   while (!(st = read_verb(reader, &ctx.predicate)) && read_ws_star(reader) &&
@@ -1268,11 +1306,11 @@ read_predicateObjectList(SerdReader* reader, ReadContext ctx, bool* ate_dot)
 }
 
 static SerdStatus
-end_collection(SerdReader* reader,
-               ReadContext ctx,
-               Ref         n1,
-               Ref         n2,
-               SerdStatus  st)
+end_collection(SerdReader* const reader,
+               const ReadContext ctx,
+               const Ref         n1,
+               const Ref         n2,
+               const SerdStatus  st)
 {
 	pop_node(reader, n2);
 	pop_node(reader, n1);
@@ -1286,7 +1324,7 @@ end_collection(SerdReader* reader,
 }
 
 static SerdStatus
-read_collection(SerdReader* reader, ReadContext ctx, Ref* dest)
+read_collection(SerdReader* const reader, ReadContext ctx, Ref* const dest)
 {
 	SerdStatus st = SERD_SUCCESS;
 	eat_byte_safe(reader, '(');
@@ -1347,7 +1385,10 @@ read_collection(SerdReader* reader, ReadContext ctx, Ref* dest)
 }
 
 static SerdStatus
-read_subject(SerdReader* reader, ReadContext ctx, Ref* dest, int* s_type)
+read_subject(SerdReader* const reader,
+             const ReadContext ctx,
+             Ref* const        dest,
+             int* const        s_type)
 {
 	SerdStatus st      = SERD_SUCCESS;
 	bool       ate_dot = false;
@@ -1374,7 +1415,7 @@ read_subject(SerdReader* reader, ReadContext ctx, Ref* dest, int* s_type)
 }
 
 static SerdStatus
-read_labelOrSubject(SerdReader* reader, Ref* dest)
+read_labelOrSubject(SerdReader* const reader, Ref* const dest)
 {
 	bool ate_dot = false;
 	switch (peek_byte(reader)) {
@@ -1398,7 +1439,7 @@ read_labelOrSubject(SerdReader* reader, Ref* dest)
 }
 
 static SerdStatus
-read_triples(SerdReader* reader, ReadContext ctx, bool* ate_dot)
+read_triples(SerdReader* const reader, ReadContext ctx, bool* const ate_dot)
 {
 	SerdStatus st = SERD_FAILURE;
 	if (ctx.subject) {
@@ -1418,7 +1459,7 @@ read_triples(SerdReader* reader, ReadContext ctx, bool* ate_dot)
 }
 
 static SerdStatus
-read_base(SerdReader* reader, bool sparql, bool token)
+read_base(SerdReader* const reader, const bool sparql, const bool token)
 {
 	SerdStatus st = SERD_SUCCESS;
 	if (token) {
@@ -1447,7 +1488,7 @@ read_base(SerdReader* reader, bool sparql, bool token)
 }
 
 static SerdStatus
-read_prefixID(SerdReader* reader, bool sparql, bool token)
+read_prefixID(SerdReader* const reader, const bool sparql, const bool token)
 {
 	SerdStatus st = SERD_SUCCESS;
 	if (token) {
@@ -1485,7 +1526,7 @@ read_prefixID(SerdReader* reader, bool sparql, bool token)
 }
 
 static SerdStatus
-read_directive(SerdReader* reader)
+read_directive(SerdReader* const reader)
 {
 	const bool sparql = peek_byte(reader) != '@';
 	if (!sparql) {
@@ -1512,7 +1553,7 @@ read_directive(SerdReader* reader)
 }
 
 static SerdStatus
-read_wrappedGraph(SerdReader* reader, ReadContext* ctx)
+read_wrappedGraph(SerdReader* const reader, ReadContext* const ctx)
 {
 	if (!eat_byte_check(reader, '{')) {
 		return SERD_ERR_BAD_SYNTAX;
@@ -1551,7 +1592,10 @@ read_wrappedGraph(SerdReader* reader, ReadContext* ctx)
 }
 
 static int
-tokcmp(SerdReader* reader, Ref ref, const char* tok, size_t n)
+tokcmp(SerdReader* const reader,
+       const Ref         ref,
+       const char* const tok,
+       const size_t      n)
 {
 	SerdNode* node = deref(reader, ref);
 	if (!node || node->n_bytes != n) {
@@ -1562,7 +1606,7 @@ tokcmp(SerdReader* reader, Ref ref, const char* tok, size_t n)
 }
 
 SerdStatus
-read_n3_statement(SerdReader* reader)
+read_n3_statement(SerdReader* const reader)
 {
 	SerdStatementFlags flags   = 0;
   ReadContext        ctx     = {0, 0, 0, 0, 0, 0, &flags};
@@ -1642,7 +1686,7 @@ read_n3_statement(SerdReader* reader)
 }
 
 static void
-skip_until(SerdReader* reader, uint8_t byte)
+skip_until(SerdReader* const reader, const uint8_t byte)
 {
 	for (int c = 0; (c = peek_byte(reader)) && c != byte;) {
 		eat_byte_safe(reader, c);
@@ -1650,7 +1694,7 @@ skip_until(SerdReader* reader, uint8_t byte)
 }
 
 SerdStatus
-read_turtleTrigDoc(SerdReader* reader)
+read_turtleTrigDoc(SerdReader* const reader)
 {
 	while (!reader->source.eof) {
 		const SerdStatus st = read_n3_statement(reader);
@@ -1666,7 +1710,7 @@ read_turtleTrigDoc(SerdReader* reader)
 }
 
 SerdStatus
-read_nquadsDoc(SerdReader* reader)
+read_nquadsDoc(SerdReader* const reader)
 {
 	SerdStatus st = SERD_SUCCESS;
 	while (!reader->source.eof) {
@@ -1720,3 +1764,7 @@ read_nquadsDoc(SerdReader* reader)
 	}
 	return SERD_SUCCESS;
 }
+
+#if defined(__clang__) && __clang_major__ >= 10
+_Pragma("clang diagnostic pop")
+#endif

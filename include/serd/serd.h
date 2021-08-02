@@ -88,15 +88,6 @@ extern "C" {
    @{
 */
 
-/// Lexical environment for relative URIs or CURIEs (base URI and namespaces)
-typedef struct SerdEnvImpl SerdEnv;
-
-/// Streaming parser that reads a text stream and writes to a statement sink
-typedef struct SerdReaderImpl SerdReader;
-
-/// Streaming serialiser that writes a text stream as statements are pushed
-typedef struct SerdWriterImpl SerdWriter;
-
 /// RDF syntax type
 typedef enum {
   SERD_TURTLE   = 1, ///< Terse triples http://www.w3.org/TR/turtle
@@ -104,75 +95,6 @@ typedef enum {
   SERD_NQUADS   = 3, ///< Line-based quads http://www.w3.org/TR/n-quads/
   SERD_TRIG     = 4  ///< Terse quads http://www.w3.org/TR/trig/
 } SerdSyntax;
-
-/// Flags indicating inline abbreviation information for a statement
-typedef enum {
-  SERD_EMPTY_S      = 1u << 1u, ///< Empty blank node subject
-  SERD_EMPTY_O      = 1u << 2u, ///< Empty blank node object
-  SERD_ANON_S_BEGIN = 1u << 3u, ///< Start of anonymous subject
-  SERD_ANON_O_BEGIN = 1u << 4u, ///< Start of anonymous object
-  SERD_ANON_CONT    = 1u << 5u, ///< Continuation of anonymous node
-  SERD_LIST_S_BEGIN = 1u << 6u, ///< Start of list subject
-  SERD_LIST_O_BEGIN = 1u << 7u, ///< Start of list object
-  SERD_LIST_CONT    = 1u << 8u  ///< Continuation of list
-} SerdStatementFlag;
-
-/// Bitwise OR of SerdStatementFlag values
-typedef uint32_t SerdStatementFlags;
-
-/**
-   Type of a node.
-
-   An RDF node, in the abstract sense, can be either a resource, literal, or a
-   blank.  This type is more precise, because syntactically there are two ways
-   to refer to a resource (by URI or CURIE).
-
-   There are also two ways to refer to a blank node in syntax (by ID or
-   anonymously), but this is handled by statement flags rather than distinct
-   node types.
-*/
-typedef enum {
-  /**
-     The type of a nonexistent node.
-
-     This type is useful as a sentinel, but is never emitted by the reader.
-  */
-  SERD_NOTHING = 0,
-
-  /**
-     Literal value.
-
-     A literal optionally has either a language, or a datatype (not both).
-  */
-  SERD_LITERAL = 1,
-
-  /**
-     URI (absolute or relative).
-
-     Value is an unquoted URI string, which is either a relative reference
-     with respect to the current base URI (e.g. "foo/bar"), or an absolute
-     URI (e.g. "http://example.org/foo").
-     @see [RFC3986](http://tools.ietf.org/html/rfc3986)
-  */
-  SERD_URI = 2,
-
-  /**
-     CURIE, a shortened URI.
-
-     Value is an unquoted CURIE string relative to the current environment,
-     e.g. "rdf:type".  @see [CURIE Syntax 1.0](http://www.w3.org/TR/curie)
-  */
-  SERD_CURIE = 3,
-
-  /**
-     A blank node.
-
-     Value is a blank node ID without any syntactic prefix, like "id3", which
-     is meaningful only within this serialisation.  @see [RDF 1.1
-     Turtle](http://www.w3.org/TR/turtle/#grammar-production-BLANK_NODE_LABEL)
-  */
-  SERD_BLANK = 4
-} SerdType;
 
 /// Flags indicating certain string properties relevant to serialisation
 typedef enum {
@@ -183,15 +105,6 @@ typedef enum {
 /// Bitwise OR of SerdNodeFlag values
 typedef uint32_t SerdNodeFlags;
 
-/// A syntactic RDF node
-typedef struct {
-  const uint8_t* SERD_NULLABLE buf;     ///< Value string
-  size_t                       n_bytes; ///< Size in bytes (excluding null)
-  size_t                       n_chars; ///< String length (excluding null)
-  SerdNodeFlags                flags;   ///< Node flags (string properties)
-  SerdType                     type;    ///< Node type
-} SerdNode;
-
 /// An unterminated string fragment
 typedef struct {
   const uint8_t* SERD_NULLABLE buf; ///< Start of chunk
@@ -199,22 +112,7 @@ typedef struct {
 } SerdChunk;
 
 /**
-   Syntax style options.
-
-   These flags allow more precise control of writer output style.  Note that
-   some options are only supported for some syntaxes, for example, NTriples
-   does not support abbreviation and is always ASCII.
-*/
-typedef enum {
-  SERD_STYLE_ABBREVIATED = 1u << 0u, ///< Abbreviate triples when possible.
-  SERD_STYLE_ASCII       = 1u << 1u, ///< Escape all non-ASCII characters.
-  SERD_STYLE_RESOLVED    = 1u << 2u, ///< Resolve URIs against base URI.
-  SERD_STYLE_CURIED      = 1u << 3u, ///< Shorten URIs into CURIEs.
-  SERD_STYLE_BULK        = 1u << 4u, ///< Write output in pages.
-} SerdStyle;
-
-/**
-   Free memory allocated by Serd
+   Free memory allocated by Serd.
 
    This function exists because some systems require memory allocated by a
    library to be freed by code in the same library.  It is otherwise equivalent
@@ -340,7 +238,7 @@ typedef size_t (*SerdSink)(const void* SERD_NONNULL buf,
 */
 
 /**
-   A parsed URI
+   A parsed URI.
 
    This struct directly refers to chunks in other strings, it does not own any
    memory itself.  Thus, URIs can be parsed and/or resolved against a base URI
@@ -437,6 +335,69 @@ serd_uri_serialise_relative(const SerdURI* SERD_NONNULL  uri,
    @{
 */
 
+/**
+   Type of a node.
+
+   An RDF node, in the abstract sense, can be either a resource, literal, or a
+   blank.  This type is more precise, because syntactically there are two ways
+   to refer to a resource (by URI or CURIE).
+
+   There are also two ways to refer to a blank node in syntax (by ID or
+   anonymously), but this is handled by statement flags rather than distinct
+   node types.
+*/
+typedef enum {
+  /**
+     The type of a nonexistent node.
+
+     This type is useful as a sentinel, but is never emitted by the reader.
+  */
+  SERD_NOTHING = 0,
+
+  /**
+     Literal value.
+
+     A literal optionally has either a language, or a datatype (not both).
+  */
+  SERD_LITERAL = 1,
+
+  /**
+     URI (absolute or relative).
+
+     Value is an unquoted URI string, which is either a relative reference
+     with respect to the current base URI (e.g. "foo/bar"), or an absolute
+     URI (e.g. "http://example.org/foo").
+     @see [RFC3986](http://tools.ietf.org/html/rfc3986)
+  */
+  SERD_URI = 2,
+
+  /**
+     CURIE, a shortened URI.
+
+     Value is an unquoted CURIE string relative to the current environment,
+     e.g. "rdf:type".  @see [CURIE Syntax 1.0](http://www.w3.org/TR/curie)
+  */
+  SERD_CURIE = 3,
+
+  /**
+     A blank node.
+
+     Value is a blank node ID without any syntactic prefix, like "id3", which
+     is meaningful only within this serialisation.  @see [RDF 1.1
+     Turtle](http://www.w3.org/TR/turtle/#grammar-production-BLANK_NODE_LABEL)
+  */
+  SERD_BLANK = 4
+} SerdType;
+
+/// A syntactic RDF node
+typedef struct {
+  const uint8_t* SERD_NULLABLE buf;     ///< Value string
+  size_t                       n_bytes; ///< Size in bytes (excluding null)
+  size_t                       n_chars; ///< String length (excluding null)
+  SerdNodeFlags                flags;   ///< Node flags (string properties)
+  SerdType                     type;    ///< Node type
+} SerdNode;
+
 static const SerdNode SERD_NODE_NULL = {NULL, 0, 0, 0, SERD_NOTHING};
 
 /**
@@ -527,7 +488,7 @@ serd_node_new_relative_uri(const SerdURI* SERD_NONNULL  uri,
                            SerdURI* SERD_NULLABLE       out);
 
 /**
-   Create a new node by serialising `d` into an xsd:decimal string
+   Create a new node by serialising `d` into an xsd:decimal string.
 
    The resulting node will always contain a `.', start with a digit, and end
    with a digit (i.e. will have a leading and/or trailing `0' if necessary).
@@ -551,7 +512,7 @@ SerdNode
 serd_node_new_integer(int64_t i);
 
 /**
-   Create a node by serialising `buf` into an xsd:base64Binary string
+   Create a node by serialising `buf` into an xsd:base64Binary string.
 
    This function can be used to make a serialisable node out of arbitrary
    binary data, which can be decoded using serd_base64_decode().
@@ -595,6 +556,21 @@ serd_node_free(SerdNode* SERD_NULLABLE node);
    @{
 */
 
+/// Flags indicating inline abbreviation information for a statement
+typedef enum {
+  SERD_EMPTY_S      = 1u << 1u, ///< Empty blank node subject
+  SERD_EMPTY_O      = 1u << 2u, ///< Empty blank node object
+  SERD_ANON_S_BEGIN = 1u << 3u, ///< Start of anonymous subject
+  SERD_ANON_O_BEGIN = 1u << 4u, ///< Start of anonymous object
+  SERD_ANON_CONT    = 1u << 5u, ///< Continuation of anonymous node
+  SERD_LIST_S_BEGIN = 1u << 6u, ///< Start of list subject
+  SERD_LIST_O_BEGIN = 1u << 7u, ///< Start of list object
+  SERD_LIST_CONT    = 1u << 8u  ///< Continuation of list
+} SerdStatementFlag;
+
+/// Bitwise OR of SerdStatementFlag values
+typedef uint32_t SerdStatementFlags;
+
 /// An error description
 typedef struct {
   SerdStatus                   status;   ///< Error code
@@ -615,7 +591,7 @@ typedef SerdStatus (*SerdErrorSink)(void* SERD_NULLABLE           handle,
                                     const SerdError* SERD_NONNULL error);
 
 /**
-   Sink (callback) for base URI changes
+   Sink (callback) for base URI changes.
 
    Called whenever the base URI of the serialisation changes.
 */
@@ -623,7 +599,7 @@ typedef SerdStatus (*SerdBaseSink)(void* SERD_NULLABLE          handle,
                                    const SerdNode* SERD_NONNULL uri);
 
 /**
-   Sink (callback) for namespace definitions
+   Sink (callback) for namespace definitions.
 
    Called whenever a prefix is defined in the serialisation.
 */
@@ -632,7 +608,7 @@ typedef SerdStatus (*SerdPrefixSink)(void* SERD_NULLABLE          handle,
                                      const SerdNode* SERD_NONNULL uri);
 
 /**
-   Sink (callback) for statements
+   Sink (callback) for statements.
 
    Called for every RDF statement in the serialisation.
 */
@@ -647,7 +623,7 @@ typedef SerdStatus (*SerdStatementSink)(
   const SerdNode* SERD_NULLABLE object_lang);
 
 /**
-   Sink (callback) for anonymous node end markers
+   Sink (callback) for anonymous node end markers.
 
    This is called to indicate that the anonymous node with the given
    `value` will no longer be referred to by any future statements
@@ -661,6 +637,9 @@ typedef SerdStatus (*SerdEndSink)(void* SERD_NULLABLE          handle,
    @defgroup serd_env Environment
    @{
 */
+
+/// Lexical environment for relative URIs or CURIEs (base URI and namespaces)
+typedef struct SerdEnvImpl SerdEnv;
 
 /// Create a new environment
 SERD_API
@@ -685,7 +664,7 @@ serd_env_set_base_uri(SerdEnv* SERD_NONNULL         env,
                       const SerdNode* SERD_NULLABLE uri);
 
 /**
-   Set a namespace prefix
+   Set a namespace prefix.
 
    A namespace prefix is used to expand CURIE nodes, for example, with the
    prefix "xsd" set to "http://www.w3.org/2001/XMLSchema#", "xsd:decimal" will
@@ -707,7 +686,7 @@ serd_env_set_prefix_from_strings(SerdEnv* SERD_NONNULL       env,
 /// Qualify `uri` into a CURIE if possible
 SERD_API
 bool
-serd_env_qualify(const SerdEnv* SERD_NONNULL  env,
+serd_env_qualify(const SerdEnv* SERD_NULLABLE env,
                  const SerdNode* SERD_NONNULL uri,
                  SerdNode* SERD_NONNULL       prefix,
                  SerdChunk* SERD_NONNULL      suffix);
@@ -720,7 +699,7 @@ serd_env_qualify(const SerdEnv* SERD_NONNULL  env,
 */
 SERD_API
 SerdStatus
-serd_env_expand(const SerdEnv* SERD_NONNULL  env,
+serd_env_expand(const SerdEnv* SERD_NULLABLE env,
                 const SerdNode* SERD_NONNULL curie,
                 SerdChunk* SERD_NONNULL      uri_prefix,
                 SerdChunk* SERD_NONNULL      uri_suffix);
@@ -732,7 +711,7 @@ serd_env_expand(const SerdEnv* SERD_NONNULL  env,
 */
 SERD_API
 SerdNode
-serd_env_expand_node(const SerdEnv* SERD_NONNULL  env,
+serd_env_expand_node(const SerdEnv* SERD_NULLABLE env,
                      const SerdNode* SERD_NONNULL node);
 
 /// Call `func` for each prefix defined in `env`
@@ -748,6 +727,9 @@ serd_env_foreach(const SerdEnv* SERD_NONNULL env,
    @{
 */
 
+/// Streaming parser that reads a text stream and writes to a statement sink
+typedef struct SerdReaderImpl SerdReader;
+
 /// Create a new RDF reader
 SERD_API
 SerdReader* SERD_ALLOCATED
@@ -760,7 +742,7 @@ serd_reader_new(SerdSyntax          syntax,
                 SerdEndSink SERD_NULLABLE       end_sink);
 
 /**
-   Enable or disable strict parsing
+   Enable or disable strict parsing.
 
    The reader is non-strict (lax) by default, which will tolerate URIs with
    invalid characters.  Setting strict will fail when parsing such files.  An
@@ -850,7 +832,7 @@ serd_reader_start_source_stream(SerdReader* SERD_NONNULL         reader,
                                 size_t                           page_size);
 
 /**
-   Read a single "chunk" of data during an incremental read
+   Read a single "chunk" of data during an incremental read.
 
    This function will read a single top level description, and return.  This
    may be a directive, statement, or several statements; essentially it reads
@@ -900,6 +882,24 @@ serd_reader_free(SerdReader* SERD_NULLABLE reader);
    @{
 */
 
+/// Streaming serialiser that writes a text stream as statements are pushed
+typedef struct SerdWriterImpl SerdWriter;
+
+/**
+   Syntax style options.
+
+   These flags allow more precise control of writer output style.  Note that
+   some options are only supported for some syntaxes, for example, NTriples
+   does not support abbreviation and is always ASCII.
+*/
+typedef enum {
+  SERD_STYLE_ABBREVIATED = 1u << 0u, ///< Abbreviate triples when possible.
+  SERD_STYLE_ASCII       = 1u << 1u, ///< Escape all non-ASCII characters.
+  SERD_STYLE_RESOLVED    = 1u << 2u, ///< Resolve URIs against base URI.
+  SERD_STYLE_CURIED      = 1u << 3u, ///< Shorten URIs into CURIEs.
+  SERD_STYLE_BULK        = 1u << 4u, ///< Write output in pages.
+} SerdStyle;
+
 /// Create a new RDF writer
 SERD_API
 SerdWriter* SERD_ALLOCATED
@@ -933,7 +933,7 @@ serd_file_sink(const void* SERD_NONNULL buf,
                void* SERD_NONNULL       stream);
 
 /**
-   A convenience sink function for writing to a string
+   A convenience sink function for writing to a string.
 
    This function can be used as a SerdSink to write to a SerdChunk which is
    resized as necessary with realloc().  The `stream` parameter must point to
@@ -969,7 +969,7 @@ serd_writer_set_error_sink(SerdWriter* SERD_NONNULL   writer,
                            void* SERD_NULLABLE        error_handle);
 
 /**
-   Set a prefix to be removed from matching blank node identifiers
+   Set a prefix to be removed from matching blank node identifiers.
 
    This is the counterpart to serd_reader_add_blank_prefix() which can be used
    to "undo" added prefixes.
@@ -1042,7 +1042,7 @@ serd_writer_end_anon(SerdWriter* SERD_NONNULL      writer,
                      const SerdNode* SERD_NULLABLE node);
 
 /**
-   Finish a write
+   Finish a write.
 
    This flushes any pending output, for example terminating punctuation, so
    that the output is a complete document.
